@@ -1,0 +1,14 @@
+[package]
+name = "ipopt"
+version = "0.1.0"
+authors = ["Egor Larionov <egor.larionov@gmail.com>"]
+build = "build.rs"
+
+[dependencies]
+libc = "*"
+
+[build-dependencies]
+bindgen = "*"
+curl = "*"
+tar = "*"
+flate2 = "*"
