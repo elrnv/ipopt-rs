@@ -8,6 +8,12 @@ mod tests {
     use super::*;
     use std::ptr;
     use std::ffi::CString;
+
+    /// A small structure used to store state between calls to Ipopt NLP callbacks.
+    #[derive(Debug)]
+    struct UserData {
+        g_offset: [Number; 2],
+    }
 	
     /// Test Ipopt raw bindings. This will also serve as an example of the raw C API.
     #[test]
@@ -45,7 +51,7 @@ mod tests {
         let mut adaptive_str = CString::new("adaptive").unwrap();
 
         unsafe {
-            AddIpoptNumOption(nlp, (&mut tol_str).as_ptr() as *mut i8, 1e-9);
+            AddIpoptNumOption(nlp, (&mut tol_str).as_ptr() as *mut i8, 1e-7);
             AddIpoptStrOption(nlp,
                                      (&mut mu_strategy_str).as_ptr() as *mut i8,
                                      (&mut adaptive_str).as_ptr() as *mut i8);
@@ -55,46 +61,108 @@ mod tests {
 		let mut x = vec![1.0, 5.0, 5.0, 1.0];
 
 		/* allocate space to store the bound multipliers at the solution */
+        let mut mult_g = Vec::with_capacity(m as usize);
+        mult_g.resize(m as usize, 0.0);
 		let mut mult_x_L = Vec::with_capacity(n);
         mult_x_L.resize(n, 0.0);
 		let mut mult_x_U = Vec::with_capacity(n);
         mult_x_U.resize(n, 0.0);
 
+        let mut user_data = UserData { g_offset: [0.0, 0.0] };
+        let udata_ptr = (&mut user_data) as *mut UserData;
+
 		let mut obj = 0.0; // objective value as output
 		/* solve the problem */
 		let status = unsafe {
             IpoptSolve(
-                nlp,                     // Problem that is to be optimized.
-                x.as_mut_ptr(),          // Input: Starting point; Output: Final solution
-                ptr::null_mut(),         // Values of constraint g at final point (output only)
-                &mut obj as *mut Number, // Final value of the objective function (output only)
-                ptr::null_mut(),         // Input: Initial values for constraint multipliers.
-                                         // Output: Final multipliers for constraints.
-                mult_x_L.as_mut_ptr(),   // Input: Initial values for the multipliers for
-                                         //        the lower variable bounds. (if warm start)
-                                         // Output: Final multipliers for lower variable bounds
-                mult_x_U.as_mut_ptr(),   // Input: Initial values for the multipliers for
-                                         //        the upper variable bounds. (if warm start)
-                                         // Output: Final multipliers for upper variable bounds.
-                ptr::null_mut())         // Pointer to user data. This will be passed unmodified
-                                         // to the callback functions.
+                nlp,                      // Problem that is to be optimized.
+                x.as_mut_ptr(),           // Input: Starting point; Output: Final solution
+                ptr::null_mut(),          // Values of constraint g at final point (output only)
+                &mut obj as *mut Number,  // Final value of the objective function (output only)
+                mult_g.as_mut_ptr(),      // Input: Initial values for constraint multipliers.
+                                          // Output: Final multipliers for constraints.
+                mult_x_L.as_mut_ptr(),    // Input: Initial values for the multipliers for
+                                          //        the lower variable bounds. (if warm start)
+                                          // Output: Final multipliers for lower variable bounds
+                mult_x_U.as_mut_ptr(),    // Input: Initial values for the multipliers for
+                                          //        the upper variable bounds. (if warm start)
+                                          // Output: Final multipliers for upper variable bounds.
+                udata_ptr as UserDataPtr) // Pointer to user data. This will be passed unmodified
+                                          // to the callback functions.
         };
 
 		if status == ApplicationReturnStatus_Solve_Succeeded {
 			println!("\n\nSolution of the primal variables, x");
 			for (i, x_val) in x.iter().enumerate() {
-				println!("x[{}] = {}", i, x_val); 
+				println!("x[{}] = {:e}", i, x_val); 
             }
 
+			println!("\n\nSolution of the constraint multipliers, lambda");
+			for (i, mult_g_val) in mult_g.iter().enumerate() {
+				println!("lambda[{}] = {:e}", i, mult_g_val); 
+            }
 			println!("\n\nSolution of the bound multipliers, z_L and z_U");
-			for (i, x_L_val) in mult_x_L.iter().enumerate() {
-				println!("z_L[{}] = {}", i, x_L_val); 
+			for (i, mult_x_L_val) in mult_x_L.iter().enumerate() {
+				println!("z_L[{}] = {:e}", i, mult_x_L_val); 
             }
-			for (i, x_U_val) in mult_x_U.iter().enumerate() {
-				println!("z_U[{}] = {}", i, x_U_val); 
+			for (i, mult_x_U_val) in mult_x_U.iter().enumerate() {
+				println!("z_U[{}] = {:e}", i, mult_x_U_val); 
             }
 
-            println!("\n\nObjective value\nf(x*) = {}", obj); 
+            println!("\n\nObjective value\nf(x*) = {:e}", obj); 
+
+            // Now we are going to solve this problem again, but with slightly modified
+            // constraints.  We change the constraint offset of the first constraint a bit,
+            // and resolve the problem using the warm start option.
+            
+            user_data.g_offset[0] = 0.2;
+
+            let mut warm_start_str = CString::new("warm_start_init_point").unwrap();
+            let mut yes_str = CString::new("yes").unwrap();
+            let mut bound_push_str = CString::new("bound_push").unwrap();
+            let mut bound_frac_str = CString::new("bound_frac").unwrap();
+
+            unsafe {
+                AddIpoptStrOption(nlp,
+                                  (&mut warm_start_str).as_ptr() as *mut i8,
+                                  (&mut yes_str).as_ptr() as *mut i8);
+                AddIpoptNumOption(nlp, (&mut bound_push_str).as_ptr() as *mut i8, 1e-5);
+                AddIpoptNumOption(nlp, (&mut bound_frac_str).as_ptr() as *mut i8, 1e-5);
+            }
+
+
+            let status = unsafe {
+                IpoptSolve(
+                    nlp,
+                    x.as_mut_ptr(),
+                    ptr::null_mut(),
+                    &mut obj as *mut Number,
+                    mult_g.as_mut_ptr(),
+                    mult_x_L.as_mut_ptr(),
+                    mult_x_U.as_mut_ptr(),
+                    udata_ptr as UserDataPtr)
+            };
+
+		    if status == ApplicationReturnStatus_Solve_Succeeded {
+                println!("\n\nSolution of the primal variables, x");
+                for (i, x_val) in x.iter().enumerate() {
+                    println!("x[{}] = {:e}", i, x_val); 
+                }
+
+                println!("\n\nSolution of the constraint multipliers, lambda");
+                for (i, mult_g_val) in mult_g.iter().enumerate() {
+                    println!("lambda[{}] = {:e}", i, mult_g_val); 
+                }
+                println!("\n\nSolution of the bound multipliers, z_L and z_U");
+                for (i, mult_x_L_val) in mult_x_L.iter().enumerate() {
+                    println!("z_L[{}] = {:e}", i, mult_x_L_val); 
+                }
+                for (i, mult_x_U_val) in mult_x_U.iter().enumerate() {
+                    println!("z_U[{}] = {:e}", i, mult_x_U_val); 
+                }
+
+                println!("\n\nObjective value\nf(x*) = {:e}", obj); 
+            }
 		}
 
 		/* free allocated memory */
@@ -139,14 +207,18 @@ mod tests {
         _new_x: Bool,
         m: Index,
         g: *mut Number,
-        _user_data: UserDataPtr) -> Bool {
+        user_data_ptr: UserDataPtr) -> Bool {
       //struct MyUserData* my_data = user_data;
 
       assert!(n == 4);
       assert!(m == 2);
 
-      *g.offset(0) = *x.offset(0) * *x.offset(1) * *x.offset(2) * *x.offset(3);// + my_data->g_offset.offset(0);
-      *g.offset(1) = *x.offset(0)**x.offset(0) + *x.offset(1)**x.offset(1) + *x.offset(2)**x.offset(2) + *x.offset(3)**x.offset(3);// + my_data->g_offse*t.offset(1);
+      let user_data = &*(user_data_ptr as *mut UserData);
+      *g.offset(0) = *x.offset(0) * *x.offset(1) * *x.offset(2) * *x.offset(3) + user_data.g_offset[0];
+      *g.offset(1) = *x.offset(0) * *x.offset(0)
+          + *x.offset(1) * *x.offset(1)
+          + *x.offset(2) * *x.offset(2)
+          + *x.offset(3) * *x.offset(3) + user_data.g_offset[1];
 
       true as Bool
     }
