@@ -1,8 +1,11 @@
 extern crate ipopt_sys as ffi;
 
-use ffi::{Index, Number, Bool, Int};
+use ffi::{Bool, Int};
 use std::ffi::CString;
 use std::slice;
+
+pub type Number = f64; // Same as ffi::Number
+pub type Index = i32;  // Same as ffi::Index
 
 /// The non-linear problem to be solved by Ipopt. This trait specifies all the
 /// information needed to construct the unconstrained optimization problem (although the
@@ -13,7 +16,7 @@ use std::slice;
 /// In case of failure to produce values, simply return `false` where applicable.
 /// This feature could be used to tell Ipopt to try smaller perturbations for `x` for
 /// instance.
-pub trait UnconstrainedProblem {
+pub trait BasicProblem {
     /// Specify the indexing style used for arrays in this problem.
     /// (Default is zero-based)
     fn indexing_style(&self) -> IndexingStyle { IndexingStyle::CStyle }
@@ -36,20 +39,21 @@ pub trait UnconstrainedProblem {
     fn objective_grad(&mut self, x: &[Number], grad_f: &mut [Number]) -> bool;
 }
 
-/// An extension to the `UnconstrainedProblem` trait that enables full Newton iterations in
+/// An extension to the `BasicProblem` trait that enables full Newton iterations in
 /// Ipopt. If this trait is NOT implemented by your problem, Ipopt will be set to perform
 /// [Quasi-Newton Approximation](https://www.coin-or.org/Ipopt/documentation/node31.html) for
 /// second derivatives.
 /// This interface asks for the Hessian matrix in sparse triplet form.
-pub trait NewtonProblem : UnconstrainedProblem {
+pub trait NewtonProblem : BasicProblem {
     /// Number of non-zeros in the Hessian matrix. This includes the constraint hessian if one is
     /// provided.
     fn num_hessian_non_zeros(&self) -> usize;
     /// Hessian indices. These are the row and column indices of the non-zeros
     /// in the sparse representation of the matrix.
     /// This is a symmetric matrix, fill the lower left triangular half only.
-    /// If your problem is constrained (i.e. you are ultimately implementing `Problem`),
-    /// ensure that you provide coordinates for non-zeros of the constraint hessian as well.
+    /// If your problem is constrained (i.e. you are ultimately implementing
+    /// `ConstrainedProblem`), ensure that you provide coordinates for non-zeros of the
+    /// constraint hessian as well.
     /// This function is internally called by Ipopt callback `eval_h`.
     fn hessian_indices(&mut self, rows: &mut [Index], cols: &mut [Index]) -> bool;
     /// Objective Hessian values. Each value must correspond to the `row` and `column` as
@@ -66,10 +70,10 @@ pub trait NewtonProblem : UnconstrainedProblem {
 /// This type of problem is the target use case for Ipopt.
 /// NOTE: Although its possible to run Quasi-Newton iterations on a constrained problem, it
 /// doesn't perform well in general, which is the reason this trait inherits `NewtonProblem`
-/// instead of `UnconstrainedProblem`. However, you may still enable L-BFGS explicitly by
+/// instead of `BasicProblem`. However, you may still enable L-BFGS explicitly by
 /// setting the "hessian_approximation" Ipopt option to "limited-memory", in which case you should
 /// simply return `false` in the implementation for `NewtonProblem` callbacks.
-pub trait Problem : NewtonProblem {
+pub trait ConstrainedProblem : NewtonProblem {
     /// Number of equality and inequality constraints.
     fn num_constraints(&self) -> usize;
     /// Number of non-zeros in the constraint jacobian.
@@ -145,7 +149,7 @@ pub type IntermediateCallback<P> =
        Number,Number,Number,
        Number,Number,Index) -> bool;
 
-pub struct Ipopt<P: UnconstrainedProblem> {
+pub struct Ipopt<P: BasicProblem> {
     /// Internal (opaque) Ipopt problem representation.
     nlp_internal: ffi::IpoptProblem,
     /// User specified interface defining the problem to be solved.
@@ -166,7 +170,7 @@ pub struct Ipopt<P: UnconstrainedProblem> {
 }
 
 
-impl<P: UnconstrainedProblem> Ipopt<P> {
+impl<P: BasicProblem> Ipopt<P> {
     pub fn new_unconstrained(nlp: P) -> Self {
         let (mut x_l, mut x_u) = nlp.bounds();
 
@@ -256,7 +260,7 @@ impl<P: UnconstrainedProblem> Ipopt<P> {
 
     /// Set intermediate callback.
     pub fn set_intermediate_callback<F>(&mut self, cb: IntermediateCallback<P>)
-        where P: UnconstrainedProblem,
+        where P: BasicProblem,
     {
         self.intermediate_callback = Some(cb);
         unsafe {
@@ -436,7 +440,7 @@ impl<P: NewtonProblem> Ipopt<P> {
 }
 
 
-impl<P: Problem> Ipopt<P> {
+impl<P: ConstrainedProblem> Ipopt<P> {
     pub fn new(nlp: P) -> Self {
         let (mut x_l, mut x_u) = nlp.bounds();
         let (mut g_l, mut g_u) = nlp.constraint_bounds();
@@ -586,7 +590,7 @@ impl<P: Problem> Ipopt<P> {
     }
 }
 
-impl<P: UnconstrainedProblem> Drop for Ipopt<P> {
+impl<P: BasicProblem> Drop for Ipopt<P> {
     fn drop(&mut self) {
         unsafe { ffi::FreeIpoptProblem(self.nlp_internal); }
     }
@@ -650,170 +654,5 @@ impl ReturnStatus {
             ffi::ApplicationReturnStatus_Internal_Error                => RS::InternalError,
             _ => RS::UnknownError,
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    struct NLP {
-        g_offset: [f64; 2],
-    }
-    impl UnconstrainedProblem for NLP {
-        fn num_variables(&self) -> usize { 4 }
-        fn bounds(&self) -> (Vec<Number>, Vec<Number>) { (vec![1.0; 4], vec![5.0; 4]) }
-        fn initial_point(&self) -> Vec<Number> { vec![1.0, 5.0, 5.0, 1.0] }
-        fn objective(&mut self, x: &[Number], obj: &mut Number) -> bool {
-            *obj = x[0] * x[3] * (x[0] + x[1] + x[2]) + x[2];
-            true
-        }
-        fn objective_grad(&mut self, x: &[Number], grad_f: &mut [Number]) -> bool {
-            grad_f[0] = x[0] * x[3] + x[3] * (x[0] + x[1] + x[2]);
-            grad_f[1] = x[0] * x[3];
-            grad_f[2] = x[0] * x[3] + 1.0;
-            grad_f[3] = x[0] * (x[0] + x[1] + x[2]);
-            true
-        }
-    }
-    impl NewtonProblem for NLP {
-        fn num_hessian_non_zeros(&self) -> usize { 10 }
-		fn hessian_indices(&mut self, irow: &mut [Index], jcol: &mut [Index]) -> bool {
-			let mut idx = 0;
-			for row in 0..4 {
-				for col in 0..row+1 {
-					irow[idx] = row;
-					jcol[idx] = col;
-					idx += 1;
-				}
-			}
-			true
-		}
-		fn objective_hessian_values(&mut self,
-                                    x: &[Number],
-                                    vals: &mut [Number]) -> bool {
-
-			vals[0] = 2.0*x[3];                 /* 0,0 */
-
-			vals[1] = x[3];                     /* 1,0 */
-			vals[2] = 0.0;                      /* 1,1 */
-
-			vals[3] = x[3];                     /* 2,0 */
-			vals[4] = 0.0;                      /* 2,1 */
-			vals[5] = 0.0;                      /* 2,2 */
-
-			vals[6] = 2.0*x[0] + x[1] + x[2];   /* 3,0 */
-			vals[7] = x[0];                     /* 3,1 */
-			vals[8] = x[0];                     /* 3,2 */
-			vals[9] = 0.0;                      /* 3,3 */
-            true
-        }
-    }
-    impl Problem for NLP {
-        fn num_constraints(&self) -> usize { 2 }
-        fn num_constraint_jac_non_zeros(&self) -> usize { 8 }
-
-        fn constraint_bounds(&self) -> (Vec<Number>, Vec<Number>) {
-            (vec![25.0, 40.0], vec![2.0e19, 40.0])
-        }
-        fn constraint(&mut self, x: &[Number], g: &mut [Number]) -> bool {
-            g[0] = x[0] * x[1] * x[2] * x[3] + self.g_offset[0];
-            g[1] = x[0]*x[0] + x[1]*x[1] + x[2]*x[2] + x[3]*x[3] + self.g_offset[1];
-            true
-        }
-        fn constraint_jac_indices(&mut self, irow: &mut [Index], jcol: &mut [Index]) -> bool {
-			irow[0] = 0;
-			jcol[0] = 0;
-			irow[1] = 0;
-			jcol[1] = 1;
-			irow[2] = 0;
-			jcol[2] = 2;
-			irow[3] = 0;
-			jcol[3] = 3;
-			irow[4] = 1;
-			jcol[4] = 0;
-			irow[5] = 1;
-			jcol[5] = 1;
-			irow[6] = 1;
-			jcol[6] = 2;
-			irow[7] = 1;
-			jcol[7] = 3;
-			true
-        }
-		fn constraint_jac_values(&mut self, x: &[Number], vals: &mut [Number]) -> bool {
-			vals[0] = x[1]*x[2]*x[3]; /* 0,0 */
-			vals[1] = x[0]*x[2]*x[3]; /* 0,1 */
-			vals[2] = x[0]*x[1]*x[3]; /* 0,2 */
-			vals[3] = x[0]*x[1]*x[2]; /* 0,3 */
-
-			vals[4] = 2.0*x[0];         /* 1,0 */
-			vals[5] = 2.0*x[1];         /* 1,1 */
-			vals[6] = 2.0*x[2];         /* 1,2 */
-			vals[7] = 2.0*x[3];         /* 1,3 */
-            true
-		}
-		fn constraint_hessian_values(&mut self,
-                                     x: &[Number],
-                                     lambda: &[Number],
-                                     vals: &mut [Number]) -> bool {
-			/* add the portion for the first constraint */
-			vals[1] += lambda[0] * (x[2] * x[3]);          /* 1,0 */
-
-			vals[3] += lambda[0] * (x[1] * x[3]);          /* 2,0 */
-			vals[4] += lambda[0] * (x[0] * x[3]);          /* 2,1 */
-
-			vals[6] += lambda[0] * (x[1] * x[2]);          /* 3,0 */
-			vals[7] += lambda[0] * (x[0] * x[2]);          /* 3,1 */
-			vals[8] += lambda[0] * (x[0] * x[1]);          /* 3,2 */
-
-			/* add the portion for the second constraint */
-			vals[0] += lambda[1] * 2.0;                      /* 0,0 */
-
-			vals[2] += lambda[1] * 2.0;                      /* 1,1 */
-
-			vals[5] += lambda[1] * 2.0;                      /* 2,2 */
-
-			vals[9] += lambda[1] * 2.0;                      /* 3,3 */
-            true
-		}
-    }
-
-    #[test]
-    fn hs071_test() {
-        let nlp = NLP { g_offset: [0.0, 0.0] };
-        let mut ipopt = Ipopt::new(nlp);
-        ipopt.set_option("tol", 1e-7);
-        ipopt.set_option("mu_strategy", "adaptive");
-        let (_,obj) = ipopt.solve();
-		let print_sol = |ipopt: &Ipopt<NLP>, obj| {
-			println!("\n\nSolution of the primal variables, x");
-			for (i, x_val) in ipopt.solution().iter().enumerate() {
-				println!("x[{}] = {:e}", i, x_val);
-			}
-
-			println!("\n\nSolution of the constraint multipliers, lambda");
-			for (i, mult_g_val) in ipopt.constraint_multipliers().iter().enumerate() {
-				println!("lambda[{}] = {:e}", i, mult_g_val);
-			}
-            let (mult_x_l, mult_x_u) = ipopt.bound_multipliers();
-			println!("\n\nSolution of the bound multipliers, z_L and z_U");
-			for (i, mult_x_l_val) in mult_x_l.iter().enumerate() {
-				println!("z_L[{}] = {:e}", i, mult_x_l_val);
-			}
-			for (i, mult_x_u_val) in mult_x_u.iter().enumerate() {
-				println!("z_U[{}] = {:e}", i, mult_x_u_val);
-			}
-
-			println!("\n\nObjective value\nf(x*) = {:e}", obj);
-        };
-
-        print_sol(&ipopt, obj);
-
-        ipopt.nlp_mut().g_offset[0] = 0.2;
-        ipopt.set_option("warm_start_init_point", "yes");
-        ipopt.set_option("bound_push", 1e-5);
-        ipopt.set_option("bound_frac", 1e-5);
-        let (_, obj) = ipopt.solve();
-        print_sol(&ipopt, obj);
     }
 }

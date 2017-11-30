@@ -49,12 +49,18 @@ mod tests {
         let mut tol_str = CString::new("tol").unwrap();
         let mut mu_strategy_str = CString::new("mu_strategy").unwrap();
         let mut adaptive_str = CString::new("adaptive").unwrap();
+        let mut print_lvl_str = CString::new("print_level").unwrap();
+        let mut sb_str = CString::new("sb").unwrap();
+        let mut yes_str = CString::new("yes").unwrap();
 
         unsafe {
+            AddIpoptIntOption(nlp, (&mut print_lvl_str).as_ptr() as *mut i8, 0);
             AddIpoptNumOption(nlp, (&mut tol_str).as_ptr() as *mut i8, 1e-7);
-            AddIpoptStrOption(nlp,
-                                     (&mut mu_strategy_str).as_ptr() as *mut i8,
-                                     (&mut adaptive_str).as_ptr() as *mut i8);
+            AddIpoptStrOption(nlp, (&mut mu_strategy_str).as_ptr() as *mut i8,
+                                   (&mut adaptive_str).as_ptr() as *mut i8);
+            AddIpoptStrOption(nlp, (&mut sb_str).as_ptr() as *mut i8,
+                                   (&mut yes_str).as_ptr() as *mut i8);
+            SetIntermediateCallback(nlp, Some(intermediate_cb));
         }
 
 		/* initialize values for the initial point */
