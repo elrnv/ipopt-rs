@@ -1,10 +1,30 @@
 extern crate ipopt;
+#[macro_use] extern crate approx;
 
 use ipopt::*;
 
 struct NLP {
     g_offset: [f64; 2],
 }
+impl NLP {
+    fn intermediate_cb(
+        &mut self,
+        _alg_mod: Index,
+        _iter_count: Index,
+        _obj_value: Number,
+        inf_pr: Number,
+        _inf_du: Number,
+        _mu: Number,
+        _d_norm: Number,
+        _regularization_size: Number,
+        _alpha_du: Number,
+        _alpha_pr: Number,
+        _ls_trials: Index) -> bool
+    {
+      inf_pr >= 1e-4
+    }
+}
+
 
 impl BasicProblem for NLP {
     fn num_variables(&self) -> usize { 4 }
@@ -19,39 +39,6 @@ impl BasicProblem for NLP {
         grad_f[1] = x[0] * x[3];
         grad_f[2] = x[0] * x[3] + 1.0;
         grad_f[3] = x[0] * (x[0] + x[1] + x[2]);
-        true
-    }
-}
-impl NewtonProblem for NLP {
-    fn num_hessian_non_zeros(&self) -> usize { 10 }
-    fn hessian_indices(&mut self, irow: &mut [Index], jcol: &mut [Index]) -> bool {
-        let mut idx = 0;
-        for row in 0..4 {
-            for col in 0..row+1 {
-                irow[idx] = row;
-                jcol[idx] = col;
-                idx += 1;
-            }
-        }
-        true
-    }
-    fn objective_hessian_values(&mut self,
-                                x: &[Number],
-                                vals: &mut [Number]) -> bool {
-
-        vals[0] = 2.0*x[3];                 /* 0,0 */
-
-        vals[1] = x[3];                     /* 1,0 */
-        vals[2] = 0.0;                      /* 1,1 */
-
-        vals[3] = x[3];                     /* 2,0 */
-        vals[4] = 0.0;                      /* 2,1 */
-        vals[5] = 0.0;                      /* 2,2 */
-
-        vals[6] = 2.0*x[0] + x[1] + x[2];   /* 3,0 */
-        vals[7] = x[0];                     /* 3,1 */
-        vals[8] = x[0];                     /* 3,2 */
-        vals[9] = 0.0;                      /* 3,3 */
         true
     }
 }
@@ -98,28 +85,56 @@ impl ConstrainedProblem for NLP {
         vals[7] = 2.0*x[3];         /* 1,3 */
         true
     }
-    fn constraint_hessian_values(&mut self,
-                                 x: &[Number],
-                                 lambda: &[Number],
-                                 vals: &mut [Number]) -> bool {
+
+    // Hessian Implementation
+    fn num_hessian_non_zeros(&self) -> usize { 10 }
+    fn hessian_indices(&mut self, irow: &mut [Index], jcol: &mut [Index]) -> bool {
+        let mut idx = 0;
+        for row in 0..4 {
+            for col in 0..row+1 {
+                irow[idx] = row;
+                jcol[idx] = col;
+                idx += 1;
+            }
+        }
+        true
+    }
+    fn hessian_values(&mut self,
+                      x: &[Number],
+                      obj_factor: Number,
+                      lambda: &[Number],
+                      vals: &mut [Number]) -> bool {
+        vals[0] = obj_factor*2.0*x[3];                  /* 0,0 */
+
+        vals[1] = obj_factor*x[3];                      /* 1,0 */
+        vals[2] = 0.0;                                  /* 1,1 */
+
+        vals[3] = obj_factor*x[3];                      /* 2,0 */
+        vals[4] = 0.0;                                  /* 2,1 */
+        vals[5] = 0.0;                                  /* 2,2 */
+
+        vals[6] = obj_factor*(2.0*x[0] + x[1] + x[2]);  /* 3,0 */
+        vals[7] = obj_factor*x[0];                      /* 3,1 */
+        vals[8] = obj_factor*x[0];                      /* 3,2 */
+        vals[9] = 0.0;                                  /* 3,3 */
         /* add the portion for the first constraint */
-        vals[1] += lambda[0] * (x[2] * x[3]);          /* 1,0 */
+        vals[1] += lambda[0] * (x[2] * x[3]);           /* 1,0 */
 
-        vals[3] += lambda[0] * (x[1] * x[3]);          /* 2,0 */
-        vals[4] += lambda[0] * (x[0] * x[3]);          /* 2,1 */
+        vals[3] += lambda[0] * (x[1] * x[3]);           /* 2,0 */
+        vals[4] += lambda[0] * (x[0] * x[3]);           /* 2,1 */
 
-        vals[6] += lambda[0] * (x[1] * x[2]);          /* 3,0 */
-        vals[7] += lambda[0] * (x[0] * x[2]);          /* 3,1 */
-        vals[8] += lambda[0] * (x[0] * x[1]);          /* 3,2 */
+        vals[6] += lambda[0] * (x[1] * x[2]);           /* 3,0 */
+        vals[7] += lambda[0] * (x[0] * x[2]);           /* 3,1 */
+        vals[8] += lambda[0] * (x[0] * x[1]);           /* 3,2 */
 
         /* add the portion for the second constraint */
-        vals[0] += lambda[1] * 2.0;                      /* 0,0 */
+        vals[0] += lambda[1] * 2.0;                     /* 0,0 */
 
-        vals[2] += lambda[1] * 2.0;                      /* 1,1 */
+        vals[2] += lambda[1] * 2.0;                     /* 1,1 */
 
-        vals[5] += lambda[1] * 2.0;                      /* 2,2 */
+        vals[5] += lambda[1] * 2.0;                     /* 2,2 */
 
-        vals[9] += lambda[1] * 2.0;                      /* 3,3 */
+        vals[9] += lambda[1] * 2.0;                     /* 3,3 */
         true
     }
 }
@@ -132,35 +147,63 @@ fn hs071_test() {
     ipopt.set_option("mu_strategy", "adaptive");
     ipopt.set_option("sb", "yes"); // suppress license message
     ipopt.set_option("print_level", 0); // suppress debug output
-    let (_,obj) = ipopt.solve();
-    let print_sol = |ipopt: &Ipopt<NLP>, obj| {
-        println!("\n\nSolution of the primal variables, x");
-        for (i, x_val) in ipopt.solution().iter().enumerate() {
-            println!("x[{}] = {:e}", i, x_val);
-        }
-
-        println!("\n\nSolution of the constraint multipliers, lambda");
-        for (i, mult_g_val) in ipopt.constraint_multipliers().iter().enumerate() {
-            println!("lambda[{}] = {:e}", i, mult_g_val);
-        }
+    ipopt.set_intermediate_callback(Some(NLP::intermediate_cb));
+    let (r, obj) = ipopt.solve();
+    {
+        let x = ipopt.solution();
+        let mult_g = ipopt.constraint_multipliers();
         let (mult_x_l, mult_x_u) = ipopt.bound_multipliers();
-        println!("\n\nSolution of the bound multipliers, z_L and z_U");
-        for (i, mult_x_l_val) in mult_x_l.iter().enumerate() {
-            println!("z_L[{}] = {:e}", i, mult_x_l_val);
-        }
-        for (i, mult_x_u_val) in mult_x_u.iter().enumerate() {
-            println!("z_U[{}] = {:e}", i, mult_x_u_val);
-        }
 
-        println!("\n\nObjective value\nf(x*) = {:e}", obj);
-    };
+        assert_eq!(r, ReturnStatus::UserRequestedStop);
+        assert_relative_eq!(x[0], 1.000000e+00, epsilon = 1e-5);
+        assert_relative_eq!(x[1], 4.743000e+00, epsilon = 1e-5);
+        assert_relative_eq!(x[2], 3.821150e+00, epsilon = 1e-5);
+        assert_relative_eq!(x[3], 1.379408e+00, epsilon = 1e-5);
 
-    print_sol(&ipopt, obj);
+        assert_relative_eq!(mult_g[0], -5.522936e-01, epsilon = 1e-5);
+        assert_relative_eq!(mult_g[1], 1.614685e-01, epsilon = 1e-5);
+
+        assert_relative_eq!(mult_x_l[0], 1.087872e+00, epsilon = 1e-5);
+        assert_relative_eq!(mult_x_l[1], 4.635819e-09, epsilon = 1e-5);
+        assert_relative_eq!(mult_x_l[2], 9.087447e-09, epsilon = 1e-5);
+        assert_relative_eq!(mult_x_l[3], 8.555955e-09, epsilon = 1e-5);
+        assert_relative_eq!(mult_x_u[0], 4.470027e-09, epsilon = 1e-5);
+        assert_relative_eq!(mult_x_u[1], 4.075231e-07, epsilon = 1e-5);
+        assert_relative_eq!(mult_x_u[2], 1.189791e-08, epsilon = 1e-5);
+        assert_relative_eq!(mult_x_u[3], 6.398749e-09, epsilon = 1e-5);
+
+        assert_relative_eq!(obj, 1.701402e+01, epsilon = 1e-5);
+    }
 
     ipopt.nlp_mut().g_offset[0] = 0.2;
     ipopt.set_option("warm_start_init_point", "yes");
     ipopt.set_option("bound_push", 1e-5);
     ipopt.set_option("bound_frac", 1e-5);
-    let (_, obj) = ipopt.solve();
-    print_sol(&ipopt, obj);
+    ipopt.set_intermediate_callback(None);
+    let (r, obj) = ipopt.solve();
+    {
+        let x = ipopt.solution();
+        let mult_g = ipopt.constraint_multipliers();
+        let (mult_x_l, mult_x_u) = ipopt.bound_multipliers();
+
+        assert_eq!(r, ReturnStatus::SolveSucceeded);
+        assert_relative_eq!(x[0], 1.000000e+00, epsilon = 1e-5);
+        assert_relative_eq!(x[1], 4.749269e+00, epsilon = 1e-5);
+        assert_relative_eq!(x[2], 3.817510e+00, epsilon = 1e-5);
+        assert_relative_eq!(x[3], 1.367870e+00, epsilon = 1e-5);
+
+        assert_relative_eq!(mult_g[0], -5.517016e-01, epsilon = 1e-5);
+        assert_relative_eq!(mult_g[1], 1.592915e-01, epsilon = 1e-5);
+
+        assert_relative_eq!(mult_x_l[0], 1.090362e+00, epsilon = 1e-5);
+        assert_relative_eq!(mult_x_l[1], 2.664877e-12, epsilon = 1e-5);
+        assert_relative_eq!(mult_x_l[2], 3.556758e-12, epsilon = 1e-5);
+        assert_relative_eq!(mult_x_l[3], 2.693832e-11, epsilon = 1e-5);
+        assert_relative_eq!(mult_x_u[0], 2.498100e-12, epsilon = 1e-5);
+        assert_relative_eq!(mult_x_u[1], 4.074104e-11, epsilon = 1e-5);
+        assert_relative_eq!(mult_x_u[2], 8.423997e-12, epsilon = 1e-5);
+        assert_relative_eq!(mult_x_u[3], 2.755724e-12, epsilon = 1e-5);
+
+        assert_relative_eq!(obj, 1.690362e+01, epsilon = 1e-5);
+    }
 }

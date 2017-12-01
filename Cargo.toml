@@ -5,3 +5,6 @@ authors = ["Egor Larionov <egor.larionov@gmail.com>"]
 
 [dependencies]
 ipopt-sys = { path = "ipopt-sys" }
+
+[dev-dependencies]
+approx = "*"

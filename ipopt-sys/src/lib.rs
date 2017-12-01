@@ -18,6 +18,9 @@ mod tests {
     /// Test Ipopt raw bindings. This will also serve as an example of the raw C API.
     #[test]
     fn hs071_test() {
+		// rough comparator
+		let approx_eq = |a: f64, b: f64| assert!((a-b).abs() < 1e-5, format!("{} vs. {}", a, b));
+
 		/* set the number of variables and allocate space for the bounds */
 		let n = 4;  // number of variabes
 		let mut x_L = Vec::with_capacity(n); // lower bounds on x
@@ -97,79 +100,80 @@ mod tests {
                                           // to the callback functions.
         };
 
-		if status == ApplicationReturnStatus_Solve_Succeeded {
-			println!("\n\nSolution of the primal variables, x");
-			for (i, x_val) in x.iter().enumerate() {
-				println!("x[{}] = {:e}", i, x_val); 
-            }
+        assert_eq!(status, ApplicationReturnStatus_User_Requested_Stop);
 
-			println!("\n\nSolution of the constraint multipliers, lambda");
-			for (i, mult_g_val) in mult_g.iter().enumerate() {
-				println!("lambda[{}] = {:e}", i, mult_g_val); 
-            }
-			println!("\n\nSolution of the bound multipliers, z_L and z_U");
-			for (i, mult_x_L_val) in mult_x_L.iter().enumerate() {
-				println!("z_L[{}] = {:e}", i, mult_x_L_val); 
-            }
-			for (i, mult_x_U_val) in mult_x_U.iter().enumerate() {
-				println!("z_U[{}] = {:e}", i, mult_x_U_val); 
-            }
+		approx_eq(x[0], 1.000000e+00);
+		approx_eq(x[1], 4.743000e+00);
+		approx_eq(x[2], 3.821150e+00);
+		approx_eq(x[3], 1.379408e+00);
 
-            println!("\n\nObjective value\nf(x*) = {:e}", obj); 
+		approx_eq(mult_g[0], -5.522936e-01);
+		approx_eq(mult_g[1], 1.614685e-01);
 
-            // Now we are going to solve this problem again, but with slightly modified
-            // constraints.  We change the constraint offset of the first constraint a bit,
-            // and resolve the problem using the warm start option.
-            
-            user_data.g_offset[0] = 0.2;
+		approx_eq(mult_x_L[0], 1.087872e+00);
+		approx_eq(mult_x_L[1], 4.635819e-09);
+		approx_eq(mult_x_L[2], 9.087447e-09);
+		approx_eq(mult_x_L[3], 8.555955e-09);
+		approx_eq(mult_x_U[0], 4.470027e-09);
+		approx_eq(mult_x_U[1], 4.075231e-07);
+		approx_eq(mult_x_U[2], 1.189791e-08);
+		approx_eq(mult_x_U[3], 6.398749e-09);
 
-            let mut warm_start_str = CString::new("warm_start_init_point").unwrap();
-            let mut yes_str = CString::new("yes").unwrap();
-            let mut bound_push_str = CString::new("bound_push").unwrap();
-            let mut bound_frac_str = CString::new("bound_frac").unwrap();
+		approx_eq(obj, 1.701402e+01);
 
-            unsafe {
-                AddIpoptStrOption(nlp,
-                                  (&mut warm_start_str).as_ptr() as *mut i8,
-                                  (&mut yes_str).as_ptr() as *mut i8);
-                AddIpoptNumOption(nlp, (&mut bound_push_str).as_ptr() as *mut i8, 1e-5);
-                AddIpoptNumOption(nlp, (&mut bound_frac_str).as_ptr() as *mut i8, 1e-5);
-            }
+		// Now we are going to solve this problem again, but with slightly modified
+		// constraints.  We change the constraint offset of the first constraint a bit,
+		// and resolve the problem using the warm start option.
+		
+		user_data.g_offset[0] = 0.2;
 
+		let mut warm_start_str = CString::new("warm_start_init_point").unwrap();
+		let mut yes_str = CString::new("yes").unwrap();
+		let mut bound_push_str = CString::new("bound_push").unwrap();
+		let mut bound_frac_str = CString::new("bound_frac").unwrap();
 
-            let status = unsafe {
-                IpoptSolve(
-                    nlp,
-                    x.as_mut_ptr(),
-                    ptr::null_mut(),
-                    &mut obj as *mut Number,
-                    mult_g.as_mut_ptr(),
-                    mult_x_L.as_mut_ptr(),
-                    mult_x_U.as_mut_ptr(),
-                    udata_ptr as UserDataPtr)
-            };
-
-		    if status == ApplicationReturnStatus_Solve_Succeeded {
-                println!("\n\nSolution of the primal variables, x");
-                for (i, x_val) in x.iter().enumerate() {
-                    println!("x[{}] = {:e}", i, x_val); 
-                }
-
-                println!("\n\nSolution of the constraint multipliers, lambda");
-                for (i, mult_g_val) in mult_g.iter().enumerate() {
-                    println!("lambda[{}] = {:e}", i, mult_g_val); 
-                }
-                println!("\n\nSolution of the bound multipliers, z_L and z_U");
-                for (i, mult_x_L_val) in mult_x_L.iter().enumerate() {
-                    println!("z_L[{}] = {:e}", i, mult_x_L_val); 
-                }
-                for (i, mult_x_U_val) in mult_x_U.iter().enumerate() {
-                    println!("z_U[{}] = {:e}", i, mult_x_U_val); 
-                }
-
-                println!("\n\nObjective value\nf(x*) = {:e}", obj); 
-            }
+		unsafe {
+			AddIpoptStrOption(nlp,
+							  (&mut warm_start_str).as_ptr() as *mut i8,
+							  (&mut yes_str).as_ptr() as *mut i8);
+			AddIpoptNumOption(nlp, (&mut bound_push_str).as_ptr() as *mut i8, 1e-5);
+			AddIpoptNumOption(nlp, (&mut bound_frac_str).as_ptr() as *mut i8, 1e-5);
+			SetIntermediateCallback(nlp, None);
 		}
+
+
+		let status = unsafe {
+			IpoptSolve(
+				nlp,
+				x.as_mut_ptr(),
+				ptr::null_mut(),
+				&mut obj as *mut Number,
+				mult_g.as_mut_ptr(),
+				mult_x_L.as_mut_ptr(),
+				mult_x_U.as_mut_ptr(),
+				udata_ptr as UserDataPtr)
+		};
+
+		assert_eq!(status, ApplicationReturnStatus_Solve_Succeeded);
+
+		approx_eq(x[0], 1.000000e+00);
+		approx_eq(x[1], 4.749269e+00);
+		approx_eq(x[2], 3.817510e+00);
+		approx_eq(x[3], 1.367870e+00);
+
+		approx_eq(mult_g[0], -5.517016e-01);
+		approx_eq(mult_g[1], 1.592915e-01);
+
+		approx_eq(mult_x_L[0], 1.090362e+00);
+		approx_eq(mult_x_L[1], 2.664877e-12);
+		approx_eq(mult_x_L[2], 3.556758e-12);
+		approx_eq(mult_x_L[3], 2.693832e-11);
+		approx_eq(mult_x_U[0], 2.498100e-12);
+		approx_eq(mult_x_U[1], 4.074104e-11);
+		approx_eq(mult_x_U[2], 8.423997e-12);
+		approx_eq(mult_x_U[3], 2.755724e-12);
+
+		approx_eq(obj, 1.690362e+01);
 
 		/* free allocated memory */
 		unsafe { FreeIpoptProblem(nlp); }
@@ -352,7 +356,7 @@ mod tests {
 
     extern "C" fn intermediate_cb(
         _alg_mod: Index,
-        iter_count: Index,
+        _iter_count: Index,
         _obj_value: Number,
         inf_pr: Number,
         _inf_du: Number,
@@ -363,8 +367,6 @@ mod tests {
         _alpha_pr: Number,
         _ls_trials: Index,
         _user_data: UserDataPtr) -> Bool {
-
-      println!("Testing intermediate callback in iteration {}", iter_count);
       if inf_pr < 1e-4 {
           false as Bool
       } else {

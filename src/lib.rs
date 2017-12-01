@@ -41,12 +41,12 @@ pub trait BasicProblem {
 
 /// An extension to the `BasicProblem` trait that enables full Newton iterations in
 /// Ipopt. If this trait is NOT implemented by your problem, Ipopt will be set to perform
-/// [Quasi-Newton Approximation](https://www.coin-or.org/Ipopt/documentation/node31.html) for
-/// second derivatives.
+/// [Quasi-Newton Approximation](https://www.coin-or.org/Ipopt/documentation/node31.html)
+/// for second derivatives.
 /// This interface asks for the Hessian matrix in sparse triplet form.
 pub trait NewtonProblem : BasicProblem {
-    /// Number of non-zeros in the Hessian matrix. This includes the constraint hessian if one is
-    /// provided.
+    /// Number of non-zeros in the Hessian matrix. This includes the constraint hessian
+    /// if one is provided.
     fn num_hessian_non_zeros(&self) -> usize;
     /// Hessian indices. These are the row and column indices of the non-zeros
     /// in the sparse representation of the matrix.
@@ -58,22 +58,21 @@ pub trait NewtonProblem : BasicProblem {
     fn hessian_indices(&mut self, rows: &mut [Index], cols: &mut [Index]) -> bool;
     /// Objective Hessian values. Each value must correspond to the `row` and `column` as
     /// specified in `hessian_indices`.
-    /// This is a symmetric matrix, fill the lower left triangular half only.
     /// This function is internally called by Ipopt callback `eval_h` and each value is
     /// premultiplied by `Ipopt`'s `obj_factor` as necessary.
-    fn objective_hessian_values(&mut self, x: &[Number], vals: &mut [Number]) -> bool;
+    fn hessian_values(&mut self, x: &[Number], vals: &mut [Number]) -> bool;
 }
 
-/// Extends the `NewtonProblem` trait to enable equality and inequality constraints.
-/// Equality constraints are enforce by setting the lower and upper bounds for the constraint to
-/// the same value.
+/// Extends the `BasicProblem` trait to enable equality and inequality constraints.
+/// Equality constraints are enforce by setting the lower and upper bounds for the
+/// constraint to the same value.
 /// This type of problem is the target use case for Ipopt.
-/// NOTE: Although its possible to run Quasi-Newton iterations on a constrained problem, it
-/// doesn't perform well in general, which is the reason this trait inherits `NewtonProblem`
-/// instead of `BasicProblem`. However, you may still enable L-BFGS explicitly by
-/// setting the "hessian_approximation" Ipopt option to "limited-memory", in which case you should
-/// simply return `false` in the implementation for `NewtonProblem` callbacks.
-pub trait ConstrainedProblem : NewtonProblem {
+/// NOTE: Although its possible to run Quasi-Newton iterations on a constrained problem,
+/// it doesn't perform well in general, which is the reason why you must also provide the
+/// Hessian callbacks.  However, you may still enable L-BFGS explicitly by setting the
+/// "hessian_approximation" Ipopt option to "limited-memory", in which case you should
+/// simply return `false` in `hessian_indices` and `hessian_values`.
+pub trait ConstrainedProblem : BasicProblem {
     /// Number of equality and inequality constraints.
     fn num_constraints(&self) -> usize;
     /// Number of non-zeros in the constraint jacobian.
@@ -88,24 +87,32 @@ pub trait ConstrainedProblem : NewtonProblem {
     fn constraint_bounds(&self) -> (Vec<Number>, Vec<Number>);
     /// Constraint jacobian indices. These are the row and column indices of the
     /// non-zeros in the sparse representation of the matrix.
-    // TODO: veriy whether this function is called only once when the `Ipopt` object is created.
     /// This function is internally called by Ipopt callback `eval_jac_g`.
     fn constraint_jac_indices(&mut self, rows: &mut [Index], cols: &mut [Index]) -> bool;
     /// Constraint jacobian values. Each value must correspond to the `row` and
     /// `column` as specified in `constraint_jac_indices`.
     /// This function is internally called by Ipopt callback `eval_jac_g`.
     fn constraint_jac_values(&mut self, x: &[Number], vals: &mut [Number]) -> bool;
-    /// Constraint Hessian values. Each value must correspond to the `row` and `column` as
-    /// specified in `hessian_indices`.
-    /// This is a symmetric matrix, fill the lower left triangular half only.
-    /// Compared to `objective_hessian_values` from `NewtonProblem`, this version requires
-    /// you to specify the constraint hessian. You should multiply the constraint hessian
-    /// values by the corresponding values in `lambda` (the Lagrange multiplier).
+    /// Number of non-zeros in the Hessian matrix. This includes the constraint hessian.
+    fn num_hessian_non_zeros(&self) -> usize;
+    /// Hessian indices. These are the row and column indices of the non-zeros
+    /// in the sparse representation of the matrix.
+    /// This should be a symmetric matrix, fill the lower left triangular half only.
+    /// Ensure that you provide coordinates for non-zeros of the
+    /// objective and constraint hessians.
     /// This function is internally called by Ipopt callback `eval_h`.
-    fn constraint_hessian_values(&mut self,
-                                 x: &[Number],
-                                 lambda: &[Number],
-                                 vals: &mut [Number]) -> bool;
+    fn hessian_indices(&mut self, rows: &mut [Index], cols: &mut [Index]) -> bool;
+    /// Hessian values. Each value must correspond to the `row` and `column` as
+    /// specified in `hessian_indices`.
+    /// Write the objective hessian values multiplied by `obj_factor` and constraint
+    /// hessian values multipled by the corresponding values in `lambda` (the Lagrange
+    /// multiplier).
+    /// This function is internally called by Ipopt callback `eval_h`.
+    fn hessian_values(&mut self,
+                      x: &[Number],
+                      obj_factor: Number,
+                      lambda: &[Number],
+                      vals: &mut [Number]) -> bool;
 }
 
 
@@ -164,9 +171,6 @@ pub struct Ipopt<P: BasicProblem> {
     x: Vec<Number>,
     /// Intermediate callback.
     intermediate_callback: Option<IntermediateCallback<P>>,
-    /// Temporary constraint hessian values. Used to decouple computation of constraint
-    /// hessian from the objective hessian as required by Ipopt.
-    temp_constraint_hess_vals: Vec<Number>
 }
 
 
@@ -211,7 +215,6 @@ impl<P: BasicProblem> Ipopt<P> {
             mult_x_u,
             x,
             intermediate_callback: None,
-            temp_constraint_hess_vals: Vec::new(),
         }
     }
 
@@ -259,12 +262,17 @@ impl<P: BasicProblem> Ipopt<P> {
     }
 
     /// Set intermediate callback.
-    pub fn set_intermediate_callback<F>(&mut self, cb: IntermediateCallback<P>)
+    pub fn set_intermediate_callback(&mut self, mb_cb: Option<IntermediateCallback<P>>)
         where P: BasicProblem,
     {
-        self.intermediate_callback = Some(cb);
+        self.intermediate_callback = mb_cb;
+
         unsafe {
-            ffi::SetIntermediateCallback(self.nlp_internal, Some(Self::intermediate_cb));
+            if let Some(_) = mb_cb {
+                ffi::SetIntermediateCallback(self.nlp_internal, Some(Self::intermediate_cb));
+            } else {
+                ffi::SetIntermediateCallback(self.nlp_internal, None);
+            }
         }
     }
 
@@ -350,9 +358,10 @@ impl<P: BasicProblem> Ipopt<P> {
                 &mut ip.nlp_interface,
                 alg_mod, iter_count, obj_value,
                 inf_pr, inf_du, mu, d_norm,
-                regularization_size, alpha_du, alpha_pr, ls_trials);
+                regularization_size, alpha_du, alpha_pr, ls_trials) as Bool
+        } else {
+            true as Bool
         }
-        true as Bool
     }
 }
 
@@ -394,7 +403,6 @@ impl<P: NewtonProblem> Ipopt<P> {
             mult_x_u,
             x,
             intermediate_callback: None,
-            temp_constraint_hess_vals: Vec::new(),
         }
     }
 
@@ -425,7 +433,7 @@ impl<P: NewtonProblem> Ipopt<P> {
                 slice::from_raw_parts_mut(jcol, nele_hess as usize)) as Bool
         } else {
             /* return the values. */
-            let result = nlp.objective_hessian_values(
+            let result = nlp.hessian_values(
                 slice::from_raw_parts(x, n as usize),
                 slice::from_raw_parts_mut(values, nele_hess as usize)) as Bool;
             // This problem has no constraints so we can multiply each entry by the
@@ -475,9 +483,6 @@ impl<P: ConstrainedProblem> Ipopt<P> {
         mult_x_u.resize(num_vars, 0.0);
         let x = nlp.initial_point();
 
-        let mut temp_constraint_hess_vals = Vec::with_capacity(num_hess_nnz);
-        temp_constraint_hess_vals.resize(num_hess_nnz, 0.0);
-
         Ipopt {
             nlp_internal,
             nlp_interface: nlp,
@@ -486,7 +491,6 @@ impl<P: ConstrainedProblem> Ipopt<P> {
             mult_x_u,
             x,
             intermediate_callback: None,
-            temp_constraint_hess_vals,
         }
     }
 
@@ -539,54 +543,36 @@ impl<P: ConstrainedProblem> Ipopt<P> {
         }
     }
 
-    /// Helper utility to set a Vec<Number> to be all zeros.
-    fn zero_vec(buf: &mut Vec<Number>) {
-        // We could use write_bytes or memset here but this method is stable and has no significant
-        // performance cost.
-        let n = buf.len();
-        buf.clear();
-        buf.resize(n, 0.0);
-    }
-
-    /// Evaluate the hessian matrix. Compared to `eval_h`, this version includes the constraint
-    /// hessian.
+    /// Evaluate the hessian matrix. Compared to `eval_h` from `NewtonProblem`,
+    /// this version includes the constraint hessian.
     unsafe extern "C" fn eval_full_h(
         n: Index,
         x: *mut Number,
-        new_x: Bool,
+        _new_x: Bool,
         obj_factor: Number,
         m: Index,
         lambda: *mut Number,
-        new_lambda: Bool,
+        _new_lambda: Bool,
         nele_hess: Index,
         irow: *mut Index,
         jcol: *mut Index,
         values: *mut Number,
         user_data: ffi::UserDataPtr) -> Bool
     {
-        let obj_result = Self::eval_h(n,x,new_x,obj_factor,
-                                      m,lambda,new_lambda,
-                                      nele_hess,irow,jcol,values,user_data);
-
-        let ip = &mut (*(user_data as *mut Ipopt<P>));
-        let constraint_result = if !values.is_null() {
-            Self::zero_vec(&mut ip.temp_constraint_hess_vals);
-            let constraint_result =
-                ip.nlp_interface.constraint_hessian_values(
-                    slice::from_raw_parts(x, n as usize),
-                    slice::from_raw_parts(lambda, m as usize),
-                    slice::from_raw_parts_mut(ip.temp_constraint_hess_vals.as_mut_ptr(),
-                                              nele_hess as usize)) as Bool;
-
-            // add constraint hessian
-            let start_idx = ip.nlp_interface.indexing_style() as usize;
-            for i in start_idx..nele_hess as usize {
-                *values.offset(i as isize) += ip.temp_constraint_hess_vals[i];
-            }
-            constraint_result
-        } else { 1 };
-
-        constraint_result * obj_result
+        let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
+        if values.is_null() {
+            /* return the structure. */
+            nlp.hessian_indices(
+                slice::from_raw_parts_mut(irow, nele_hess as usize),
+                slice::from_raw_parts_mut(jcol, nele_hess as usize)) as Bool
+        } else {
+            /* return the values. */
+            nlp.hessian_values(
+                slice::from_raw_parts(x, n as usize),
+                obj_factor,
+                slice::from_raw_parts(lambda, m as usize),
+                slice::from_raw_parts_mut(values, nele_hess as usize)) as Bool
+        }
     }
 }
 
@@ -604,6 +590,7 @@ pub enum IndexingStyle {
 }
 
 /// Program return status.
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum ReturnStatus {
     SolveSucceeded,
     SolvedToAcceptableLevel,
