@@ -206,7 +206,7 @@ impl<P: BasicProblem> Ipopt<P> {
 
         assert!(Self::set_ipopt_option(nlp_internal,
                                        "hessian_approximation",
-                                       "limited_memory"));
+                                       "limited-memory"));
         Ipopt {
             nlp_internal,
             nlp_interface: nlp,
