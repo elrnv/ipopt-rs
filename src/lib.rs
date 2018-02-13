@@ -192,10 +192,10 @@ impl<P: BasicProblem> Ipopt<P> {
                 0, // no hessian
                 nlp.indexing_style() as Index,
                 Some(Self::eval_f),
-                None,
+                Some(Self::eval_g_none),
                 Some(Self::eval_grad_f),
-                None,
-                None)
+                Some(Self::eval_jac_g_none),
+                Some(Self::eval_h_none))
         };
 
         let mut mult_x_l = Vec::with_capacity(num_vars);
@@ -338,6 +338,51 @@ impl<P: BasicProblem> Ipopt<P> {
                            slice::from_raw_parts_mut(grad_f, n as usize)) as Bool
     }
 
+    /// Placeholder constraint function with no constraints.
+    unsafe extern "C" fn eval_g_none(
+        _n: Index,
+        _x: *mut Number,
+        _new_x: Bool,
+        _m: Index,
+        _g: *mut Number,
+        _user_data: ffi::UserDataPtr) -> Bool
+    {
+        true as Bool
+    }
+
+    /// Placeholder constraint derivative function with no constraints.
+    unsafe extern "C" fn eval_jac_g_none(
+        _n: Index,
+        _x: *mut Number,
+        _new_x: Bool,
+        _m: Index,
+        _nele_jac: Index,
+        _irow: *mut Index,
+        _jcol: *mut Index,
+        _values: *mut Number,
+        _user_data: ffi::UserDataPtr) -> Bool
+    {
+        true as Bool
+    }
+
+    /// Placeholder hessian evaluation function.
+    unsafe extern "C" fn eval_h_none(
+        _n: Index,
+        _x: *mut Number,
+        _new_x: Bool,
+        _obj_factor: Number,
+        _m: Index,
+        _lambda: *mut Number,
+        _new_lambda: Bool,
+        _nele_hess: Index,
+        _irow: *mut Index,
+        _jcol: *mut Index,
+        _values: *mut Number,
+        _user_data: ffi::UserDataPtr) -> Bool
+    {
+        true as Bool
+    }
+
     unsafe extern "C" fn intermediate_cb(
         alg_mod: Index,
         iter_count: Index,
@@ -383,9 +428,9 @@ impl<P: NewtonProblem> Ipopt<P> {
                 nlp.num_hessian_non_zeros() as Index,
                 nlp.indexing_style() as Index,
                 Some(Self::eval_f),
-                None,
+                Some(Self::eval_g_none),
                 Some(Self::eval_grad_f),
-                None,
+                Some(Self::eval_jac_g_none),
                 Some(Self::eval_h))
         };
 
