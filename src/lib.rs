@@ -127,18 +127,21 @@ pub enum IpoptOption<'a> {
     Int(i32),
 }
 
+/// Convert a floating point value to an `IpoptOption`.
 impl<'a> From<f64> for IpoptOption<'a> {
     fn from(opt: f64) -> Self {
         IpoptOption::Num(opt)
     }
 }
 
+/// Convert a string to an `IpoptOption`.
 impl<'a> From<&'a str> for IpoptOption<'a> {
     fn from(opt: &'a str) -> Self {
         IpoptOption::Str(opt)
     }
 }
 
+/// Convert an integer value to an `IpoptOption`.
 impl<'a> From<i32> for IpoptOption<'a> {
     fn from(opt: i32) -> Self {
         IpoptOption::Int(opt)
@@ -156,6 +159,8 @@ pub type IntermediateCallback<P> =
        Number,Number,Number,
        Number,Number,Index) -> bool;
 
+/// Ipopt non-linear optimization problem solver. This structure is used to store data
+/// needed to solve these problems using first and second order methods.
 pub struct Ipopt<P: BasicProblem> {
     /// Internal (opaque) Ipopt problem representation.
     nlp_internal: ffi::IpoptProblem,
@@ -175,6 +180,7 @@ pub struct Ipopt<P: BasicProblem> {
 
 
 impl<P: BasicProblem> Ipopt<P> {
+    /// Create a new unconstrained non-linear problem.
     pub fn new_unconstrained(nlp: P) -> Self {
         let (mut x_l, mut x_u) = nlp.bounds();
 
@@ -383,6 +389,7 @@ impl<P: BasicProblem> Ipopt<P> {
         true as Bool
     }
 
+    /// Intermediate callback.
     unsafe extern "C" fn intermediate_cb(
         alg_mod: Index,
         iter_count: Index,
@@ -411,6 +418,7 @@ impl<P: BasicProblem> Ipopt<P> {
 }
 
 impl<P: NewtonProblem> Ipopt<P> {
+    /// Create a new newton problem.
     pub fn new_newton(nlp: P) -> Self {
         let (mut x_l, mut x_u) = nlp.bounds();
 
@@ -494,6 +502,7 @@ impl<P: NewtonProblem> Ipopt<P> {
 
 
 impl<P: ConstrainedProblem> Ipopt<P> {
+    /// Create a new constrained non-linear problem.
     pub fn new(nlp: P) -> Self {
         let (mut x_l, mut x_u) = nlp.bounds();
         let (mut g_l, mut g_u) = nlp.constraint_bounds();
