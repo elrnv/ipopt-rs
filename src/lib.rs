@@ -386,7 +386,11 @@ impl<P: BasicProblem> Ipopt<P> {
         _values: *mut Number,
         _user_data: ffi::UserDataPtr) -> Bool
     {
-        true as Bool
+        // From "Quasi-Newton Approximation of Second-Derivatives" in Ipopt docs:
+        //  "If you are using the C or Fortran interface, you still need to implement [eval_h],
+        //  but [it] should return false or IERR=1, respectively, and don't need to do
+        //  anything else."
+        false as Bool
     }
 
     /// Intermediate callback.
