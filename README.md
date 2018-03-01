@@ -1,4 +1,4 @@
-# Ipopt-rs
+# ipopt-rs
 
 This crate provides a safe Rust interface to the [Ipopt](https://projects.coin-or.org/Ipopt)
 non-linear optimization library. From the Ipopt webpage:
