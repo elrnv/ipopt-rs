@@ -28,6 +28,10 @@ use tar::Archive;
 const LIBRARY: &'static str = "ipopt";
 const SOURCE_URL: &'static str = "https://www.coin-or.org/download/source/Ipopt";
 const VERSION: &'static str = "3.12.8";
+#[cfg(target_os = "macos")]
+static LIB_EXT: &'static str = "dylib";
+#[cfg(target_os = "linux")]
+static LIB_EXT: &'static str = "so.1";
 
 macro_rules! log {
     ($fmt:expr) => (println!(concat!("ipopt-sys/build.rs:{}: ", $fmt), line!()));
@@ -39,7 +43,7 @@ macro_rules! log_var(($var:ident) => (log!(concat!(stringify!($var), " = {:?}"),
 
 fn main() {
     // Compile ipopt from source
-    // TODO: Implement building on Linux and Windows.
+    // TODO: Implement building on Windows.
     
     // Build URL to download from
     let binary_url = format!("{}/Ipopt-{}.tgz", SOURCE_URL, VERSION);
@@ -69,7 +73,7 @@ fn main() {
     let unpacked_dir = download_dir.join(base_name);
     let install_dir = download_dir.clone();
     let lib_dir = install_dir.join("lib");
-    let library_file = format!("lib{}.dylib", LIBRARY);
+    let library_file = format!("lib{}.{}", LIBRARY, LIB_EXT);
     let library_path = lib_dir.join(&library_file);
     if !library_path.exists() {
 
