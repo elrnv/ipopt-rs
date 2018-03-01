@@ -93,3 +93,7 @@ fn main() {
 ```
 
 See the tests for more examples including constrained optimization.
+
+# License
+
+The code within this repository is licensed under the [Apache License 2.0](http://www.apache.org/licenses/LICENSE-2.0).
