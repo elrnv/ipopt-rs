@@ -5,8 +5,13 @@ authors = ["Egor Larionov <egor.larionov@gmail.com>"]
 build = "build.rs"
 license = "Apache-2.0"
 description = "Raw unsafe Rust bindings to the Ipopt non-linear optimization library."
-keywords = ["non-linear", "optimization", "constrained", "ipopt", "unsafe"]
 readme = "README.md"
+
+homepage = "https://github.com/elrnv/ipopt-rs"
+repository = "https://github.com/elrnv/ipopt-rs"
+documentation = "https://docs.rs/ipopt-sys"
+
+keywords = ["non-linear", "optimization", "constrained", "ipopt", "unsafe"]
 
 [build-dependencies]
 bindgen = "^0.32"

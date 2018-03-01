@@ -4,10 +4,11 @@ version = "0.1.0"
 authors = ["Egor Larionov <egor.larionov@gmail.com>"]
 license = "Apache-2.0"
 description = "Rust language bindings for the Ipopt non-linear constrained optimization library."
+readme = "README.md"
 
 homepage = "https://github.com/elrnv/ipopt-rs"
 repository = "https://github.com/elrnv/ipopt-rs"
-readme = "README.md"
+documentation = "https://docs.rs/ipopt-rs"
 
 keywords = ["non-linear", "optimization", "constrained", "ipopt", "newton"]
 
