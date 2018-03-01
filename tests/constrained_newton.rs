@@ -176,7 +176,7 @@ fn hs071_test() {
         assert_relative_eq!(obj, 1.701402e+01, epsilon = 1e-5);
     }
 
-    ipopt.nlp_mut().g_offset[0] = 0.2;
+    ipopt.problem_mut().g_offset[0] = 0.2;
     ipopt.set_option("warm_start_init_point", "yes");
     ipopt.set_option("bound_push", 1e-5);
     ipopt.set_option("bound_frac", 1e-5);

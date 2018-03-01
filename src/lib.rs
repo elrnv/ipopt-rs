@@ -225,12 +225,12 @@ impl<P: BasicProblem> Ipopt<P> {
     }
 
     /// Get an immutable reference to the provided NLP object.
-    pub fn nlp(&self) -> &P {
+    pub fn problem(&self) -> &P {
         &self.nlp_interface
     }
     
     /// Get a mutable reference to the provided NLP object.
-    pub fn nlp_mut(&mut self) -> &mut P {
+    pub fn problem_mut(&mut self) -> &mut P {
         &mut self.nlp_interface
     }
 
@@ -306,13 +306,13 @@ impl<P: BasicProblem> Ipopt<P> {
     }
 
     /// Return the multipliers that enforce the variable bounds.
-    pub fn bound_multipliers(&self) -> (&Vec<Number>, &Vec<Number>) {
-        (&self.mult_x_l, &self.mult_x_u)
+    pub fn bound_multipliers(&self) -> (&[Number], &[Number]) {
+        (self.mult_x_l.as_slice(), self.mult_x_u.as_slice())
     }
 
     /// Return the multipliers that enforce the variable bounds.
-    pub fn solution(&self) -> &Vec<Number> {
-        &self.x
+    pub fn solution(&self) -> &[Number] {
+        self.x.as_slice()
     }
 
     /**
@@ -553,8 +553,8 @@ impl<P: ConstrainedProblem> Ipopt<P> {
     }
 
     /// Return the multipliers that enforce constraints.
-    pub fn constraint_multipliers(&self) -> &Vec<Number> {
-        &self.mult_g
+    pub fn constraint_multipliers(&self) -> &[Number] {
+        self.mult_g.as_slice()
     }
     
     /**
