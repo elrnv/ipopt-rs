@@ -2,6 +2,14 @@
 name = "ipopt"
 version = "0.1.0"
 authors = ["Egor Larionov <egor.larionov@gmail.com>"]
+license = "Apache-2.0"
+description = "Rust language bindings for the Ipopt non-linear constrained optimization library."
+
+homepage = "https://github.com/elrnv/ipopt-rs"
+repository = "https://github.com/elrnv/ipopt-rs"
+readme = "README.md"
+
+keywords = ["non-linear", "optimization", "constrained", "ipopt", "newton"]
 
 [dependencies]
 ipopt-sys = { path = "ipopt-sys" }
