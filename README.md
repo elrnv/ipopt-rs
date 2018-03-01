@@ -31,7 +31,7 @@ boilerplate code required to solve simple unconstrained problems.
 Solve a simple unconstrained problem using L-BFGS: minimize `(x - 1)^2 + (y -1)^2`
 
 
-```
+```rust
 extern crate ipopt;
 #[macro_use] extern crate approx; // for floating point equality tests
 
