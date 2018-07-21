@@ -16,4 +16,4 @@ keywords = ["non-linear", "optimization", "constrained", "ipopt", "newton"]
 ipopt-sys = { path = "ipopt-sys", version = "0.1.0" }
 
 [dev-dependencies]
-approx = "0.1"
+approx = "0.3"
