@@ -1,6 +1,6 @@
 [package]
 name = "ipopt-sys"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Egor Larionov <egor.larionov@gmail.com>"]
 build = "build.rs"
 license = "Apache-2.0"
@@ -14,7 +14,7 @@ documentation = "https://docs.rs/ipopt-sys"
 keywords = ["non-linear", "optimization", "constrained", "ipopt", "unsafe"]
 
 [build-dependencies]
-bindgen = "^0.32"
+bindgen = "^0.39"
 curl = "0.4"
 tar = "0.4"
 flate2 = "1.0"

@@ -27,7 +27,7 @@ use tar::Archive;
 
 const LIBRARY: &'static str = "ipopt";
 const SOURCE_URL: &'static str = "https://www.coin-or.org/download/source/Ipopt";
-const VERSION: &'static str = "3.12.8";
+const VERSION: &'static str = "3.12.10";
 #[cfg(target_os = "macos")]
 static LIB_EXT: &'static str = "dylib";
 #[cfg(target_os = "linux")]
@@ -158,7 +158,6 @@ fn main() {
         .join("IpStdCInterface.h");
     let bindings = bindgen::builder()
             .header(capi_path.to_str().unwrap())
-            .link(LIBRARY)
             .generate()
             .expect("Unable to generate bindings!");
     bindings
