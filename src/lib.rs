@@ -265,6 +265,21 @@ impl<'a> From<i32> for IpoptOption<'a> {
     }
 }
 
+/// An interface to access internal solver data including a mutable pointer to the input problem
+/// which Ipopt owns.
+pub struct SolveDataRef<'a, P> {
+    /// A mutable reference to the original input problem.
+    pub problem: &'a mut P,
+    /// The solution.
+    pub solution: &'a [Number],
+    /// Lower bound multipliers.
+    pub lower_bound_multipliers: &'a [Number],
+    /// Upper bound multipliers.
+    pub upper_bound_multipliers: &'a [Number],
+    /// Constraint multipliers, which are available only from contrained problems.
+    pub constraint_multipliers: &'a [Number],
+}
+
 /// Type defining the callback function for giving intermediate execution control to
 /// the user. If set, it is called once per iteration, providing the user with some
 /// information on the state of the optimization. This can be used to print some user-
@@ -341,16 +356,6 @@ impl<P: BasicProblem> Ipopt<P> {
         }
     }
 
-    /// Get an immutable reference to the provided NLP object.
-    pub fn problem(&self) -> &P {
-        &self.nlp_interface
-    }
-    
-    /// Get a mutable reference to the provided NLP object.
-    pub fn problem_mut(&mut self) -> &mut P {
-        &mut self.nlp_interface
-    }
-
     /// Helper static function that can be used in the constructor.
     fn set_ipopt_option<'a, O>(nlp: ffi::IpoptProblem, name: &str, option: O) -> bool
         where O: Into<IpoptOption<'a>>
@@ -420,6 +425,37 @@ impl<P: BasicProblem> Ipopt<P> {
         });
 
         (status, objective_value)
+    }
+
+    /// Get references to the internal data including a mutable reference to the input problem
+    /// struct. This allows the user to access the all the required data simultaneously.
+    pub fn data(&mut self) -> SolveDataRef<P> {
+        let Ipopt {
+            nlp_interface: ref mut problem,
+            mult_g: ref constraint_multipliers,
+            mult_x_l: ref lower_bound_multipliers,
+            mult_x_u: ref upper_bound_multipliers,
+            x: ref solution,
+            ..
+        } = *self;
+
+        SolveDataRef {
+            problem,
+            solution: solution.as_slice(),
+            lower_bound_multipliers: lower_bound_multipliers.as_slice(),
+            upper_bound_multipliers: upper_bound_multipliers.as_slice(),
+            constraint_multipliers: constraint_multipliers.as_slice(),
+        }
+    }
+
+    /// Get an immutable reference to the provided NLP object.
+    pub fn problem(&self) -> &P {
+        &self.nlp_interface
+    }
+    
+    /// Get a mutable reference to the provided NLP object.
+    pub fn problem_mut(&mut self) -> &mut P {
+        &mut self.nlp_interface
     }
 
     /// Return the multipliers that enforce the variable bounds.
