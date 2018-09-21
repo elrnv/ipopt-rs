@@ -310,6 +310,10 @@ pub struct Ipopt<P: BasicProblem> {
     intermediate_callback: Option<IntermediateCallback<P>>,
 }
 
+/// The only non-`Send` type in `Ipopt` is `nlp_internal`, which is a mutable raw pointer to an
+/// underlying C struct. It is safe to implement `Send` for `Ipopt` here because it cannot be
+/// copied or cloned.
+unsafe impl<P: BasicProblem> Send for Ipopt<P> {}
 
 impl<P: BasicProblem> Ipopt<P> {
     /// Create a new unconstrained non-linear problem.
