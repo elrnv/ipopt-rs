@@ -315,6 +315,10 @@ pub struct Ipopt<P: BasicProblem> {
 /// copied or cloned.
 unsafe impl<P: BasicProblem> Send for Ipopt<P> {}
 
+/// Ipopt cannot be copied or cloned, so it cannot be shared between threads. Thus it's safe to
+/// implement `Sync` here.
+unsafe impl<P: BasicProblem> Sync for Ipopt<P> {}
+
 impl<P: BasicProblem> Ipopt<P> {
     /// Create a new unconstrained non-linear problem.
     pub fn new_unconstrained(nlp: P) -> Self {
