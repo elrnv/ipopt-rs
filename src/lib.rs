@@ -267,7 +267,7 @@ impl<'a> From<i32> for IpoptOption<'a> {
 
 /// An interface to access internal solver data including a mutable pointer to the input problem
 /// which Ipopt owns.
-pub struct SolveDataRef<'a, P> {
+pub struct SolveDataMut<'a, P> {
     /// A mutable reference to the original input problem.
     pub problem: &'a mut P,
     /// This is the solution after the solve and the input initial data before the solve.
@@ -431,10 +431,9 @@ impl<P: BasicProblem> Ipopt<P> {
         (status, objective_value)
     }
 
-    /// Get references to the internal data including the input problem
-    /// struct. This allows the user to access all the required data simultaneously and update it
-    /// as needed.
-    pub fn data(&mut self) -> SolveDataRef<P> {
+    /// Get mutable references to the internal data including the input problem struct. This allows
+    /// the user to access all the required data simultaneously and update it as needed.
+    pub fn data_mut(&mut self) -> SolveDataMut<P> {
         let Ipopt {
             nlp_interface: ref mut problem,
             mult_g: ref mut constraint_multipliers,
@@ -444,7 +443,7 @@ impl<P: BasicProblem> Ipopt<P> {
             ..
         } = *self;
 
-        SolveDataRef {
+        SolveDataMut {
             problem,
             primal_variables: primal_variables.as_mut_slice(),
             lower_bound_multipliers: lower_bound_multipliers.as_mut_slice(),
