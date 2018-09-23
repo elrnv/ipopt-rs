@@ -270,14 +270,14 @@ impl<'a> From<i32> for IpoptOption<'a> {
 pub struct SolveDataRef<'a, P> {
     /// A mutable reference to the original input problem.
     pub problem: &'a mut P,
-    /// The solution.
-    pub solution: &'a [Number],
+    /// This is the solution after the solve and the input initial data before the solve.
+    pub primal_variables: &'a mut [Number],
     /// Lower bound multipliers.
-    pub lower_bound_multipliers: &'a [Number],
+    pub lower_bound_multipliers: &'a mut [Number],
     /// Upper bound multipliers.
-    pub upper_bound_multipliers: &'a [Number],
+    pub upper_bound_multipliers: &'a mut [Number],
     /// Constraint multipliers, which are available only from contrained problems.
-    pub constraint_multipliers: &'a [Number],
+    pub constraint_multipliers: &'a mut [Number],
 }
 
 /// Type defining the callback function for giving intermediate execution control to
@@ -431,24 +431,25 @@ impl<P: BasicProblem> Ipopt<P> {
         (status, objective_value)
     }
 
-    /// Get references to the internal data including a mutable reference to the input problem
-    /// struct. This allows the user to access the all the required data simultaneously.
+    /// Get references to the internal data including the input problem
+    /// struct. This allows the user to access all the required data simultaneously and update it
+    /// as needed.
     pub fn data(&mut self) -> SolveDataRef<P> {
         let Ipopt {
             nlp_interface: ref mut problem,
-            mult_g: ref constraint_multipliers,
-            mult_x_l: ref lower_bound_multipliers,
-            mult_x_u: ref upper_bound_multipliers,
-            x: ref solution,
+            mult_g: ref mut constraint_multipliers,
+            mult_x_l: ref mut lower_bound_multipliers,
+            mult_x_u: ref mut upper_bound_multipliers,
+            x: ref mut primal_variables,
             ..
         } = *self;
 
         SolveDataRef {
             problem,
-            solution: solution.as_slice(),
-            lower_bound_multipliers: lower_bound_multipliers.as_slice(),
-            upper_bound_multipliers: upper_bound_multipliers.as_slice(),
-            constraint_multipliers: constraint_multipliers.as_slice(),
+            primal_variables: primal_variables.as_mut_slice(),
+            lower_bound_multipliers: lower_bound_multipliers.as_mut_slice(),
+            upper_bound_multipliers: upper_bound_multipliers.as_mut_slice(),
+            constraint_multipliers: constraint_multipliers.as_mut_slice(),
         }
     }
 
