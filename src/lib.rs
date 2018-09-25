@@ -97,15 +97,12 @@
  *     ipopt.set_option("tol", 1e-9); // set error tolerance
  *     ipopt.set_option("print_level", 5); // set the print level (5 is the default)
  *
- *     let (r, obj) = ipopt.solve();
+ *     let solve_data = ipopt.solve();
  *
- *     {
- *         let x = ipopt.solution(); // retrieve the solution
- *         assert_eq!(r, ReturnStatus::SolveSucceeded);
- *         assert_relative_eq!(x[0], 1.0, epsilon = 1e-10);
- *         assert_relative_eq!(x[1], 1.0, epsilon = 1e-10);
- *         assert_relative_eq!(obj, 0.0, epsilon = 1e-10);
- *     }
+ *     assert_eq!(solve_data.status, SolveStatus::SolveSucceeded);
+ *     assert_relative_eq!(solve_data.primal_variables[0], 1.0, epsilon = 1e-10);
+ *     assert_relative_eq!(solve_data.primal_variables[1], 1.0, epsilon = 1e-10);
+ *     assert_relative_eq!(solve_data.objective_value, 0.0, epsilon = 1e-10);
  * }
  * ```
  *
@@ -265,19 +262,25 @@ impl<'a> From<i32> for IpoptOption<'a> {
     }
 }
 
-/// An interface to access internal solver data including a mutable pointer to the input problem
+/// An interface to mutably access internal solver data including the input problem
 /// which Ipopt owns.
-pub struct SolveDataMut<'a, P> {
+pub struct SolveData<'a, P> {
     /// A mutable reference to the original input problem.
     pub problem: &'a mut P,
-    /// This is the solution after the solve and the input initial data before the solve.
+    /// This is the solution after the solve.
     pub primal_variables: &'a mut [Number],
+    /// These are the values of each constraint at the end of the time step.
+    pub constraint_values: &'a mut [Number],
     /// Lower bound multipliers.
     pub lower_bound_multipliers: &'a mut [Number],
     /// Upper bound multipliers.
     pub upper_bound_multipliers: &'a mut [Number],
     /// Constraint multipliers, which are available only from contrained problems.
     pub constraint_multipliers: &'a mut [Number],
+    /// Objective value.
+    pub objective_value: Number,
+    /// Solve status. This enum reports the status of the last solve.
+    pub status: SolveStatus,
 }
 
 /// Type defining the callback function for giving intermediate execution control to
@@ -298,16 +301,12 @@ pub struct Ipopt<P: BasicProblem> {
     nlp_internal: ffi::IpoptProblem,
     /// User specified interface defining the problem to be solved.
     nlp_interface: P,
-    /// Constraint multipliers.
-    mult_g: Vec<Number>,
-    /// Variable lower bound multipliers.
-    mult_x_l: Vec<Number>,
-    /// Variable upper bound multipliers.
-    mult_x_u: Vec<Number>,
-    /// Vector of variables. This stores the initial guess and the solution.
-    x: Vec<Number>,
     /// Intermediate callback.
     intermediate_callback: Option<IntermediateCallback<P>>,
+    /// Number of primal variables.
+    num_primal_variables: usize,
+    /// Number of dual variables.
+    num_dual_variables: usize,
 }
 
 /// The only non-`Send` type in `Ipopt` is `nlp_internal`, which is a mutable raw pointer to an
@@ -318,18 +317,28 @@ unsafe impl<P: BasicProblem> Send for Ipopt<P> {}
 impl<P: BasicProblem> Ipopt<P> {
     /// Create a new unconstrained non-linear problem.
     pub fn new_unconstrained(nlp: P) -> Self {
-        let (mut x_l, mut x_u) = nlp.bounds();
+        let (x_l, x_u) = nlp.bounds();
 
         let num_vars = nlp.num_variables();
+
+        let mut mult_x_l = Vec::with_capacity(num_vars);
+        mult_x_l.resize(num_vars, 0.0);
+        let mut mult_x_u = Vec::with_capacity(num_vars);
+        mult_x_u.resize(num_vars, 0.0);
+        let x = nlp.initial_point();
 
         let nlp_internal = unsafe {
             ffi::CreateIpoptProblem(
                 num_vars as Index,
-                x_l.as_mut_ptr(),
-                x_u.as_mut_ptr(),
+                x_l.as_ptr(),
+                x_u.as_ptr(),
+                x.as_ptr(),
+                mult_x_l.as_ptr(),
+                mult_x_u.as_ptr(),
                 0, // no constraints
-                ::std::ptr::null_mut(),
-                ::std::ptr::null_mut(),
+                ::std::ptr::null(),
+                ::std::ptr::null(),
+                ::std::ptr::null(),
                 0, // no non-zeros in constraint jacobian
                 0, // no hessian
                 nlp.indexing_style() as Index,
@@ -340,23 +349,15 @@ impl<P: BasicProblem> Ipopt<P> {
                 Some(Self::eval_h_none))
         };
 
-        let mut mult_x_l = Vec::with_capacity(num_vars);
-        mult_x_l.resize(num_vars, 0.0);
-        let mut mult_x_u = Vec::with_capacity(num_vars);
-        mult_x_u.resize(num_vars, 0.0);
-        let x = nlp.initial_point();
-
         assert!(Self::set_ipopt_option(nlp_internal,
                                        "hessian_approximation",
                                        "limited-memory"));
         Ipopt {
             nlp_internal,
             nlp_interface: nlp,
-            mult_g: Vec::new(),
-            mult_x_l,
-            mult_x_u,
-            x,
             intermediate_callback: None,
+            num_primal_variables: num_vars,
+            num_dual_variables: 0,
         }
     }
 
@@ -410,66 +411,29 @@ impl<P: BasicProblem> Ipopt<P> {
 
     /// Solve non-linear problem.
     /// Return the solve status and the final value of the objective function.
-    pub fn solve(&mut self) -> (ReturnStatus, Number) {
-        let mut objective_value = 0.0;
-        let udata_ptr = self as *mut Ipopt<P>;
-        let status = ReturnStatus::new( unsafe {
-            ffi::IpoptSolve(
-                self.nlp_internal,
-                self.x.as_mut_ptr(),
-                ::std::ptr::null_mut(),
-                &mut objective_value as *mut Number,
-                if self.mult_g.is_empty() {
-                    ::std::ptr::null_mut()
-                } else {
-                    self.mult_g.as_mut_ptr() },
-                self.mult_x_l.as_mut_ptr(),
-                self.mult_x_u.as_mut_ptr(),
-                udata_ptr as ffi::UserDataPtr)
-        });
+    pub fn solve(&mut self) -> SolveData<P> {
+        let res = {
+            let udata_ptr = self as *mut Ipopt<P>;
+            unsafe { ffi::IpoptSolve(self.nlp_internal, udata_ptr as ffi::UserDataPtr) }
+        };
 
-        (status, objective_value)
-    }
-
-    /// Get mutable references to the internal data including the input problem struct. This allows
-    /// the user to access all the required data simultaneously and update it as needed.
-    pub fn data_mut(&mut self) -> SolveDataMut<P> {
         let Ipopt {
             nlp_interface: ref mut problem,
-            mult_g: ref mut constraint_multipliers,
-            mult_x_l: ref mut lower_bound_multipliers,
-            mult_x_u: ref mut upper_bound_multipliers,
-            x: ref mut primal_variables,
+            num_primal_variables,
+            num_dual_variables,
             ..
         } = *self;
 
-        SolveDataMut {
+        SolveData {
             problem,
-            primal_variables: primal_variables.as_mut_slice(),
-            lower_bound_multipliers: lower_bound_multipliers.as_mut_slice(),
-            upper_bound_multipliers: upper_bound_multipliers.as_mut_slice(),
-            constraint_multipliers: constraint_multipliers.as_mut_slice(),
+            primal_variables: unsafe { slice::from_raw_parts_mut(res.x, num_primal_variables) },
+            constraint_values: unsafe { slice::from_raw_parts_mut(res.g, num_dual_variables) },
+            lower_bound_multipliers: unsafe { slice::from_raw_parts_mut(res.mult_x_L, num_primal_variables) },
+            upper_bound_multipliers: unsafe { slice::from_raw_parts_mut(res.mult_x_U, num_primal_variables) },
+            constraint_multipliers: unsafe { slice::from_raw_parts_mut(res.mult_g, num_dual_variables) },
+            objective_value: res.obj_val,
+            status: SolveStatus::new(res.status),
         }
-    }
-
-    /// Get an immutable reference to the provided NLP object.
-    pub fn problem(&self) -> &P {
-        &self.nlp_interface
-    }
-    
-    /// Get a mutable reference to the provided NLP object.
-    pub fn problem_mut(&mut self) -> &mut P {
-        &mut self.nlp_interface
-    }
-
-    /// Return the multipliers that enforce the variable bounds.
-    pub fn bound_multipliers(&self) -> (&[Number], &[Number]) {
-        (self.mult_x_l.as_slice(), self.mult_x_u.as_slice())
-    }
-
-    /// Return the multipliers that enforce the variable bounds.
-    pub fn solution(&self) -> &[Number] {
-        self.x.as_slice()
     }
 
     /**
@@ -581,18 +545,28 @@ impl<P: BasicProblem> Ipopt<P> {
 impl<P: NewtonProblem> Ipopt<P> {
     /// Create a new newton problem.
     pub fn new_newton(nlp: P) -> Self {
-        let (mut x_l, mut x_u) = nlp.bounds();
+        let (x_l, x_u) = nlp.bounds();
 
         let num_vars = nlp.num_variables();
+
+        let mut mult_x_l = Vec::with_capacity(num_vars);
+        mult_x_l.resize(num_vars, 0.0);
+        let mut mult_x_u = Vec::with_capacity(num_vars);
+        mult_x_u.resize(num_vars, 0.0);
+        let x = nlp.initial_point();
 
         let nlp_internal = unsafe {
             ffi::CreateIpoptProblem(
                 num_vars as Index,
-                x_l.as_mut_ptr(),
-                x_u.as_mut_ptr(),
+                x_l.as_ptr(),
+                x_u.as_ptr(),
+                x.as_ptr(),
+                mult_x_l.as_ptr(),
+                mult_x_u.as_ptr(),
                 0, // no constraints
-                ::std::ptr::null_mut(),
-                ::std::ptr::null_mut(),
+                ::std::ptr::null(),
+                ::std::ptr::null(),
+                ::std::ptr::null(),
                 0, // no non-zeros in constraint jacobian
                 nlp.num_hessian_non_zeros() as Index,
                 nlp.indexing_style() as Index,
@@ -603,20 +577,12 @@ impl<P: NewtonProblem> Ipopt<P> {
                 Some(Self::eval_h))
         };
 
-        let mut mult_x_l = Vec::with_capacity(num_vars);
-        mult_x_l.resize(num_vars, 0.0);
-        let mut mult_x_u = Vec::with_capacity(num_vars);
-        mult_x_u.resize(num_vars, 0.0);
-        let x = nlp.initial_point();
-
         Ipopt {
             nlp_internal,
             nlp_interface: nlp,
-            mult_g: Vec::new(),
-            mult_x_l,
-            mult_x_u,
-            x,
             intermediate_callback: None,
+            num_primal_variables: num_vars,
+            num_dual_variables: 0,
         }
     }
 
@@ -665,21 +631,33 @@ impl<P: NewtonProblem> Ipopt<P> {
 impl<P: ConstrainedProblem> Ipopt<P> {
     /// Create a new constrained non-linear problem.
     pub fn new(nlp: P) -> Self {
-        let (mut x_l, mut x_u) = nlp.bounds();
-        let (mut g_l, mut g_u) = nlp.constraint_bounds();
+        let (x_l, x_u) = nlp.bounds();
+        let (g_l, g_u) = nlp.constraint_bounds();
 
         let num_constraints = nlp.num_constraints();
         let num_vars = nlp.num_variables();
         let num_hess_nnz =  nlp.num_hessian_non_zeros();
 
+        let mut mult_g = Vec::with_capacity(num_constraints);
+        mult_g.resize(num_constraints, 0.0);
+        let mut mult_x_l = Vec::with_capacity(num_vars);
+        mult_x_l.resize(num_vars, 0.0);
+        let mut mult_x_u = Vec::with_capacity(num_vars);
+        mult_x_u.resize(num_vars, 0.0);
+        let x = nlp.initial_point();
+
         let nlp_internal = unsafe {
             ffi::CreateIpoptProblem(
                 num_vars as Index,
-                x_l.as_mut_ptr(),
-                x_u.as_mut_ptr(),
+                x_l.as_ptr(),
+                x_u.as_ptr(),
+                x.as_ptr(),
+                mult_x_l.as_ptr(),
+                mult_x_u.as_ptr(),
                 num_constraints as Index,
-                g_l.as_mut_ptr(),
-                g_u.as_mut_ptr(),
+                g_l.as_ptr(),
+                g_u.as_ptr(),
+                mult_g.as_ptr(),
                 nlp.num_constraint_jac_non_zeros() as Index,
                 num_hess_nnz as Index,
                 nlp.indexing_style() as Index,
@@ -690,30 +668,15 @@ impl<P: ConstrainedProblem> Ipopt<P> {
                 Some(Self::eval_full_h))
         };
 
-        let mut mult_g = Vec::with_capacity(num_constraints);
-        mult_g.resize(num_constraints, 0.0);
-        let mut mult_x_l = Vec::with_capacity(num_vars);
-        mult_x_l.resize(num_vars, 0.0);
-        let mut mult_x_u = Vec::with_capacity(num_vars);
-        mult_x_u.resize(num_vars, 0.0);
-        let x = nlp.initial_point();
-
         Ipopt {
             nlp_internal,
             nlp_interface: nlp,
-            mult_g,
-            mult_x_l,
-            mult_x_u,
-            x,
             intermediate_callback: None,
+            num_primal_variables: num_vars,
+            num_dual_variables: num_constraints,
         }
     }
 
-    /// Return the multipliers that enforce constraints.
-    pub fn constraint_multipliers(&self) -> &[Number] {
-        self.mult_g.as_slice()
-    }
-    
     /**
      * Ipopt C API
      */
@@ -808,7 +771,7 @@ pub enum IndexingStyle {
 
 /// Program return status.
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub enum ReturnStatus {
+pub enum SolveStatus {
     /// Console Message: `EXIT: Optimal Solution Found.`
     ///
     /// This message indicates that IPOPT found a (locally) optimal point within the desired tolerances.
@@ -929,9 +892,9 @@ pub enum ReturnStatus {
 }
 
 #[allow(non_snake_case)]
-impl ReturnStatus {
+impl SolveStatus {
     fn new(status: ffi::ApplicationReturnStatus) -> Self {
-        use ReturnStatus as RS;
+        use SolveStatus as RS;
         match status {
             ffi::ApplicationReturnStatus_Solve_Succeeded              => RS::SolveSucceeded,
             ffi::ApplicationReturnStatus_Solved_To_Acceptable_Level   => RS::SolvedToAcceptableLevel,

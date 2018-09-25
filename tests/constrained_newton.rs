@@ -162,13 +162,19 @@ fn hs071_test() {
     ipopt.set_option("sb", "yes"); // suppress license message
     ipopt.set_option("print_level", 0); // suppress debug output
     ipopt.set_intermediate_callback(Some(NLP::intermediate_cb));
-    let (r, obj) = ipopt.solve();
     {
-        let x = ipopt.solution();
-        let mult_g = ipopt.constraint_multipliers();
-        let (mult_x_l, mult_x_u) = ipopt.bound_multipliers();
+        let SolveData {
+            primal_variables: x,
+            constraint_multipliers: mult_g,
+            lower_bound_multipliers: mult_x_l,
+            upper_bound_multipliers: mult_x_u,
+            status,
+            objective_value: obj,
+            problem,
+            ..
+        } = ipopt.solve();
 
-        assert_eq!(r, ReturnStatus::UserRequestedStop);
+        assert_eq!(status, SolveStatus::UserRequestedStop);
         assert_relative_eq!(x[0], 1.000000e+00, epsilon = 1e-5);
         assert_relative_eq!(x[1], 4.743000e+00, epsilon = 1e-5);
         assert_relative_eq!(x[2], 3.821150e+00, epsilon = 1e-5);
@@ -187,20 +193,26 @@ fn hs071_test() {
         assert_relative_eq!(mult_x_u[3], 6.398749e-09, epsilon = 1e-5);
 
         assert_relative_eq!(obj, 1.701402e+01, epsilon = 1e-5);
+
+        problem.g_offset[0] = 0.2;
     }
 
-    ipopt.problem_mut().g_offset[0] = 0.2;
     ipopt.set_option("warm_start_init_point", "yes");
     ipopt.set_option("bound_push", 1e-5);
     ipopt.set_option("bound_frac", 1e-5);
     ipopt.set_intermediate_callback(None);
-    let (r, obj) = ipopt.solve();
     {
-        let x = ipopt.solution();
-        let mult_g = ipopt.constraint_multipliers();
-        let (mult_x_l, mult_x_u) = ipopt.bound_multipliers();
+        let SolveData {
+            primal_variables: x,
+            constraint_multipliers: mult_g,
+            lower_bound_multipliers: mult_x_l,
+            upper_bound_multipliers: mult_x_u,
+            status,
+            objective_value: obj,
+            ..
+        } = ipopt.solve();
 
-        assert_eq!(r, ReturnStatus::SolveSucceeded);
+        assert_eq!(status, SolveStatus::SolveSucceeded);
         assert_relative_eq!(x[0], 1.000000e+00, epsilon = 1e-5);
         assert_relative_eq!(x[1], 4.749269e+00, epsilon = 1e-5);
         assert_relative_eq!(x[2], 3.817510e+00, epsilon = 1e-5);

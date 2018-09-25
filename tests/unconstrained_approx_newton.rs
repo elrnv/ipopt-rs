@@ -42,10 +42,14 @@ fn quadratic_test() {
     ipopt.set_option("mu_strategy", "adaptive");
     ipopt.set_option("sb", "yes"); // suppress license message
     ipopt.set_option("print_level", 0); // suppress debug output
-    let (r, obj) = ipopt.solve();
     {
-        let x = ipopt.solution();
-        assert_eq!(r, ReturnStatus::SolveSucceeded);
+        let SolveData {
+            primal_variables: x,
+            objective_value: obj,
+            status,
+            ..
+        } = ipopt.solve();
+        assert_eq!(status, SolveStatus::SolveSucceeded);
         assert_relative_eq!(x[0], 1.0, epsilon = 1e-10);
         assert_relative_eq!(x[1], 1.0, epsilon = 1e-10);
         assert_relative_eq!(obj, 0.0, epsilon = 1e-10);

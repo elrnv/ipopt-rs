@@ -11,6 +11,7 @@
 //   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 //   See the License for the specific language governing permissions and
 //   limitations under the License.
+extern crate pkg_config;
 extern crate bindgen;
 extern crate curl;
 extern crate flate2;
@@ -28,10 +29,15 @@ use tar::Archive;
 const LIBRARY: &'static str = "ipopt";
 const SOURCE_URL: &'static str = "https://www.coin-or.org/download/source/Ipopt";
 const VERSION: &'static str = "3.12.10";
+const MIN_VERSION: &'static str = "3.12.8";
 #[cfg(target_os = "macos")]
 static LIB_EXT: &'static str = "dylib";
 #[cfg(target_os = "linux")]
 static LIB_EXT: &'static str = "so.1";
+
+// OpenBLAS will be used if Ipopt is not installed and MKL is not available
+const BLAS_REPO: &'static str = "https://github.com/xianyi/OpenBLAS.git";
+const BLAS_VERSION: &'static str = "0.3.3";
 
 macro_rules! log {
     ($fmt:expr) => (println!(concat!("ipopt-sys/build.rs:{}: ", $fmt), line!()));
@@ -42,6 +48,10 @@ macro_rules! log {
 macro_rules! log_var(($var:ident) => (log!(concat!(stringify!($var), " = {:?}"), $var)));
 
 fn main() {
+    if let Ok(_) = pkg_config::Config::new().atleast_version(MIN_VERSION).find(LIBRARY) {
+        return
+    }
+
     // Compile ipopt from source
     // TODO: Implement building on Windows.
     
@@ -56,8 +66,8 @@ fn main() {
     log_var!(base_name);
 
     // Create download directory if it doesn't yet exist
-    let target_dir = PathBuf::from(&env::var("CARGO_MANIFEST_DIR").unwrap())
-        .join("target");
+    let crate_dir = PathBuf::from(&env::var("CARGO_MANIFEST_DIR").unwrap());
+    let target_dir = crate_dir.join("target");
     log_var!(target_dir);
     if !target_dir.exists() {
         fs::create_dir(&target_dir).unwrap();
@@ -100,7 +110,10 @@ fn main() {
 
         extract(tarball_path, &download_dir);
 
+        update_c_api(&crate_dir.join("src"), &unpacked_dir);
+
         // Configure and compile
+
         let build_dir = unpacked_dir.join("build");
         if !build_dir.exists() {
             fs::create_dir(&build_dir).unwrap();
@@ -116,21 +129,26 @@ fn main() {
 
         env::set_current_dir(build_dir).unwrap();
 
+        let blas = {
+            if !mkl_dir.exists() {
+                // Download blas
+                download_and_build_blas(&target_dir);
+
+                String::from("--with-blas=BUILD")
+            } else {
+                let link_libs = "-ltbb -lstdc++ -lpthread -lm -ldl";
+                let mkl_prefix = format!("{}/lib/libmkl_", mkl_dir.display());
+                format!("--with-blas={mkl}intel_lp64.a {mkl}tbb_thread.a {mkl}core.a {}",
+                        link_libs, mkl=mkl_prefix)
+            }
+        };
+
         run(unpacked_dir.join("configure").to_str().unwrap(), |cmd| {
-            let blas = 
-                if !mkl_dir.exists() {
-                    String::new()
-                } else {
-                    let link_libs = "-ltbb -lstdc++ -lpthread -lm -ldl";
-                    let mkl_prefix = format!("{}/lib/libmkl_", mkl_dir.display());
-                    format!("--with-blas={mkl}intel_lp64.a {mkl}tbb_thread.a {mkl}core.a {}",
-                            link_libs, mkl=mkl_prefix)
-                };
-            cmd.arg(format!("--prefix={}", install_dir.display())).arg(blas)
+            cmd.arg(format!("--prefix={}", install_dir.display())).arg(blas.clone())
         });
 
         run("make", |cmd| cmd.arg("-j8")); // TODO: Get CPU count programmatically.
-        run("make", |cmd| cmd.arg("test")); // Ensure everything is working
+        //run("make", |cmd| cmd.arg("test")); // Ensure everything is working
         run("make", |cmd| cmd.arg("install")); // Install to install_dir
 
         // Restore current directory
@@ -163,6 +181,46 @@ fn main() {
     bindings
         .write_to_file(output.join("IpStdCInterface.rs"))
         .expect("Couldn't write bindings!");
+}
+
+
+// Copy our modified C API into place
+// TODO: this is temporary, we may want to use pkg_config later in which case we would need
+// to build the C API separately
+fn update_c_api(src_dir: &Path, unpacked_dir: &Path) {
+    let files = ["IpStdCInterface.h", "IpStdCInterface.cpp", "IpStdInterfaceTNLP.hpp", "IpStdInterfaceTNLP.cpp", "IpStdFInterface.c"];
+
+    let capi_dir = unpacked_dir.join("Ipopt").join("src").join("Interfaces");
+    for file in files.into_iter() {
+        let dst = capi_dir.join(file);
+        let src = src_dir.join(file);
+
+        fs::copy(&src, &dst)
+            .expect(&format!("Failed to copy local {:?} to {:?}", file, capi_dir));
+    }
+}
+
+fn download_and_build_blas(target_dir: &Path) {
+    let blas_download_dir = target_dir.join(format!("blas-{}", BLAS_VERSION));
+    // ... if it's not already checked out:
+    if !Path::new(&blas_download_dir.join(".git")).exists() {
+        run("git", |cmd| {
+            cmd.arg("clone")
+                .arg(format!("--branch=v{}", BLAS_VERSION))
+                .arg(BLAS_REPO)
+                .arg(&blas_download_dir)
+        });
+    } else { // otherwise pull latest changes
+        // In theory this does nothing since we pull a tag, but do it just in case
+        run("git", |cmd| {
+            cmd.arg("-C")
+                .arg(&blas_download_dir)
+                .arg("pull")
+                .arg("origin")
+                .arg(format!("v{}", BLAS_VERSION))
+        });
+    }
+    //let out = 
 }
 
 fn remove_suffix(value: &mut String, suffix: &str) {

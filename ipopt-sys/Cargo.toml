@@ -1,6 +1,6 @@
 [package]
 name = "ipopt-sys"
-version = "0.1.2"
+version = "0.2.0"
 authors = ["Egor Larionov <egor.larionov@gmail.com>"]
 build = "build.rs"
 license = "Apache-2.0"
@@ -18,3 +18,4 @@ bindgen = "^0.39"
 curl = "0.4"
 tar = "0.4"
 flate2 = "1.0"
+pkg-config = "0.3"

@@ -19,7 +19,7 @@ include!(concat!(env!("OUT_DIR"), "/IpStdCInterface.rs"));
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::ptr;
+    use std::slice;
     use std::ffi::CString;
 
     /// A small structure used to store state between calls to Ipopt NLP callbacks.
@@ -43,21 +43,49 @@ mod tests {
         x_U.resize(n, 5.0);
 
 		/* set the number of constraints and allocate space for the bounds */
-		let m = 2; // number of constraints
+		let m = 2usize; // number of constraints
 		/* set the values of the constraint bounds */
 		let mut g_L = vec![25.0, 40.0]; // lower bounds on g
 		let mut g_U = vec![2.0e19, 40.0]; // upper bounds on g
 
+		/* initialize values for the initial point */
+		let mut x = vec![1.0, 5.0, 5.0, 1.0];
+
+		/* allocate space to store the bound multipliers at the solution */
+        let mut mult_g = Vec::with_capacity(m);
+        mult_g.resize(m, 0.0);
+		let mut mult_x_L = Vec::with_capacity(n);
+        mult_x_L.resize(n, 0.0);
+		let mut mult_x_U = Vec::with_capacity(n);
+        mult_x_U.resize(n, 0.0);
+
+        let mut user_data = UserData { g_offset: [0.0, 0.0] };
+        let udata_ptr = (&mut user_data) as *mut UserData;
+
         let nlp = unsafe {
             /* create the IpoptProblem */
             CreateIpoptProblem(
-                n as Index, x_L.as_mut_ptr(), x_U.as_mut_ptr(),
-                m, g_L.as_mut_ptr(), g_U.as_mut_ptr(), 8, 10, 0, 
+                n as Index,
+			   	x_L.as_mut_ptr(),
+			   	x_U.as_mut_ptr(),
+				x.as_mut_ptr(),         
+				mult_x_L.as_mut_ptr(),  // Initial values for the multipliers for
+									    // the lower variable bounds. (if warm start)
+				mult_x_U.as_mut_ptr(),  // Initial values for the multipliers for
+										// the upper variable bounds. (if warm start)
+                m as Index,
+			   	g_L.as_mut_ptr(),
+			   	g_U.as_mut_ptr(),
+				mult_g.as_mut_ptr(),    // Initial values for constraint multipliers.
+			   	8, 10, 0, 
                 Some(eval_f),
                 Some(eval_g),
                 Some(eval_grad_f),
                 Some(eval_jac_g),
-                Some(eval_h))
+                Some(eval_h),
+				udata_ptr as UserDataPtr, // Pointer to user data. This will be passed unmodified
+                                          // to the callback functions.
+				)
         };
 
 		/* set some options */
@@ -79,41 +107,22 @@ mod tests {
             SetIntermediateCallback(nlp, Some(intermediate_cb));
         }
 
-		/* initialize values for the initial point */
-		let mut x = vec![1.0, 5.0, 5.0, 1.0];
-
-		/* allocate space to store the bound multipliers at the solution */
-        let mut mult_g = Vec::with_capacity(m as usize);
-        mult_g.resize(m as usize, 0.0);
-		let mut mult_x_L = Vec::with_capacity(n);
-        mult_x_L.resize(n, 0.0);
-		let mut mult_x_U = Vec::with_capacity(n);
-        mult_x_U.resize(n, 0.0);
-
-        let mut user_data = UserData { g_offset: [0.0, 0.0] };
-        let udata_ptr = (&mut user_data) as *mut UserData;
-
-		let mut obj = 0.0; // objective value as output
 		/* solve the problem */
-		let status = unsafe {
-            IpoptSolve(
-                nlp,                      // Problem that is to be optimized.
-                x.as_mut_ptr(),           // Input: Starting point; Output: Final solution
-                ptr::null_mut(),          // Values of constraint g at final point (output only)
-                &mut obj as *mut Number,  // Final value of the objective function (output only)
-                mult_g.as_mut_ptr(),      // Input: Initial values for constraint multipliers.
-                                          // Output: Final multipliers for constraints.
-                mult_x_L.as_mut_ptr(),    // Input: Initial values for the multipliers for
-                                          //        the lower variable bounds. (if warm start)
-                                          // Output: Final multipliers for lower variable bounds
-                mult_x_U.as_mut_ptr(),    // Input: Initial values for the multipliers for
-                                          //        the upper variable bounds. (if warm start)
-                                          // Output: Final multipliers for upper variable bounds.
-                udata_ptr as UserDataPtr) // Pointer to user data. This will be passed unmodified
-                                          // to the callback functions.
+		let sol = unsafe {
+            IpoptSolve(nlp) // Problem that is to be optimized.
         };
 
-        assert_eq!(status, ApplicationReturnStatus_User_Requested_Stop);
+        assert_eq!(sol.status, ApplicationReturnStatus_User_Requested_Stop);
+
+		let mut g = Vec::new();
+		g.resize(m, 0.0);
+
+		// Write solutions back to our managed Vecs
+		x.copy_from_slice(unsafe { slice::from_raw_parts(sol.x, n) });
+		g.copy_from_slice(unsafe { slice::from_raw_parts(sol.g, m) });
+		mult_g.copy_from_slice(unsafe { slice::from_raw_parts(sol.mult_g, m) });
+		mult_x_L.copy_from_slice(unsafe { slice::from_raw_parts(sol.mult_x_L, n) });
+		mult_x_U.copy_from_slice(unsafe { slice::from_raw_parts(sol.mult_x_U, n) });
 
 		approx_eq(x[0], 1.000000e+00);
 		approx_eq(x[1], 4.743000e+00);
@@ -132,7 +141,7 @@ mod tests {
 		approx_eq(mult_x_U[2], 1.189791e-08);
 		approx_eq(mult_x_U[3], 6.398749e-09);
 
-		approx_eq(obj, 1.701402e+01);
+		approx_eq(sol.obj_val, 1.701402e+01);
 
 		// Now we are going to solve this problem again, but with slightly modified
 		// constraints.  We change the constraint offset of the first constraint a bit,
@@ -154,20 +163,16 @@ mod tests {
 			SetIntermediateCallback(nlp, None);
 		}
 
+		let sol = unsafe { IpoptSolve( nlp ) };
 
-		let status = unsafe {
-			IpoptSolve(
-				nlp,
-				x.as_mut_ptr(),
-				ptr::null_mut(),
-				&mut obj as *mut Number,
-				mult_g.as_mut_ptr(),
-				mult_x_L.as_mut_ptr(),
-				mult_x_U.as_mut_ptr(),
-				udata_ptr as UserDataPtr)
-		};
+		// Write solutions back to our managed Vecs
+		x.copy_from_slice(unsafe { slice::from_raw_parts(sol.x, n) });
+		g.copy_from_slice(unsafe { slice::from_raw_parts(sol.g, m) });
+		mult_g.copy_from_slice(unsafe { slice::from_raw_parts(sol.mult_g, m) });
+		mult_x_L.copy_from_slice(unsafe { slice::from_raw_parts(sol.mult_x_L, n) });
+		mult_x_U.copy_from_slice(unsafe { slice::from_raw_parts(sol.mult_x_U, n) });
 
-		assert_eq!(status, ApplicationReturnStatus_Solve_Succeeded);
+		assert_eq!(sol.status, ApplicationReturnStatus_Solve_Succeeded);
 
 		approx_eq(x[0], 1.000000e+00);
 		approx_eq(x[1], 4.749269e+00);
@@ -186,7 +191,7 @@ mod tests {
 		approx_eq(mult_x_U[2], 8.423997e-12);
 		approx_eq(mult_x_U[3], 2.755724e-12);
 
-		approx_eq(obj, 1.690362e+01);
+		approx_eq(sol.obj_val, 1.690362e+01);
 
 		/* free allocated memory */
 		unsafe { FreeIpoptProblem(nlp); }
