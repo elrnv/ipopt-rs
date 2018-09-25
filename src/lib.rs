@@ -264,6 +264,7 @@ impl<'a> From<i32> for IpoptOption<'a> {
 
 /// An interface to mutably access internal solver data including the input problem
 /// which Ipopt owns.
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct SolveData<'a, P> {
     /// A mutable reference to the original input problem.
     pub problem: &'a mut P,
