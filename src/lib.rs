@@ -446,6 +446,34 @@ impl<P: BasicProblem> Ipopt<P> {
         }
     }
 
+    /// Get data for inspection and updating from the internal solver. This is useful for updating
+    /// initial guesses between solves for instance.
+    #[allow(non_snake_case)]
+    pub fn get_solver_data(&mut self) -> SolverData<P> {
+        let Ipopt {
+            nlp_interface: ref mut problem,
+            nlp_internal,
+            num_primal_variables,
+            num_dual_variables,
+            ..
+        } = *self;
+
+        let ffi::SolverData {
+            x,
+            mult_g,
+            mult_x_L,
+            mult_x_U,
+        } = unsafe { ffi::GetSolverData(nlp_internal) };
+
+        SolverData {
+            problem,
+            primal_variables: unsafe { slice::from_raw_parts_mut(x, num_primal_variables) },
+            lower_bound_multipliers: unsafe { slice::from_raw_parts_mut(mult_x_L, num_primal_variables) },
+            upper_bound_multipliers: unsafe { slice::from_raw_parts_mut(mult_x_U, num_primal_variables) },
+            constraint_multipliers: unsafe { slice::from_raw_parts_mut(mult_g, num_dual_variables) },
+        }
+    }
+
     /**
      * Ipopt C API
      */
