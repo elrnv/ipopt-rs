@@ -59,9 +59,6 @@ mod tests {
 		let mut mult_x_U = Vec::with_capacity(n);
         mult_x_U.resize(n, 0.0);
 
-        let mut user_data = UserData { g_offset: [0.0, 0.0] };
-        let udata_ptr = (&mut user_data) as *mut UserData;
-
         let nlp = unsafe {
             /* create the IpoptProblem */
             CreateIpoptProblem(
@@ -82,10 +79,7 @@ mod tests {
                 Some(eval_g),
                 Some(eval_grad_f),
                 Some(eval_jac_g),
-                Some(eval_h),
-				udata_ptr as UserDataPtr, // Pointer to user data. This will be passed unmodified
-                                          // to the callback functions.
-				)
+                Some(eval_h))
         };
 
 		/* set some options */
@@ -107,9 +101,15 @@ mod tests {
             SetIntermediateCallback(nlp, Some(intermediate_cb));
         }
 
+        let mut user_data = UserData { g_offset: [0.0, 0.0] };
+        let udata_ptr = (&mut user_data) as *mut UserData;
+
 		/* solve the problem */
 		let sol = unsafe {
-            IpoptSolve(nlp) // Problem that is to be optimized.
+            IpoptSolve(nlp,
+					   udata_ptr as UserDataPtr, // Pointer to user data. This will be passed unmodified
+					   							 // to the callback functions.
+					   ) // Problem that is to be optimized.
         };
 
         assert_eq!(sol.status, ApplicationReturnStatus_User_Requested_Stop);
@@ -118,11 +118,11 @@ mod tests {
 		g.resize(m, 0.0);
 
 		// Write solutions back to our managed Vecs
-		x.copy_from_slice(unsafe { slice::from_raw_parts(sol.x, n) });
+		x.copy_from_slice(unsafe { slice::from_raw_parts(sol.data.x, n) });
 		g.copy_from_slice(unsafe { slice::from_raw_parts(sol.g, m) });
-		mult_g.copy_from_slice(unsafe { slice::from_raw_parts(sol.mult_g, m) });
-		mult_x_L.copy_from_slice(unsafe { slice::from_raw_parts(sol.mult_x_L, n) });
-		mult_x_U.copy_from_slice(unsafe { slice::from_raw_parts(sol.mult_x_U, n) });
+		mult_g.copy_from_slice(unsafe { slice::from_raw_parts(sol.data.mult_g, m) });
+		mult_x_L.copy_from_slice(unsafe { slice::from_raw_parts(sol.data.mult_x_L, n) });
+		mult_x_U.copy_from_slice(unsafe { slice::from_raw_parts(sol.data.mult_x_U, n) });
 
 		approx_eq(x[0], 1.000000e+00);
 		approx_eq(x[1], 4.743000e+00);
@@ -163,14 +163,14 @@ mod tests {
 			SetIntermediateCallback(nlp, None);
 		}
 
-		let sol = unsafe { IpoptSolve( nlp ) };
+		let sol = unsafe { IpoptSolve( nlp, udata_ptr as UserDataPtr ) };
 
 		// Write solutions back to our managed Vecs
-		x.copy_from_slice(unsafe { slice::from_raw_parts(sol.x, n) });
+		x.copy_from_slice(unsafe { slice::from_raw_parts(sol.data.x, n) });
 		g.copy_from_slice(unsafe { slice::from_raw_parts(sol.g, m) });
-		mult_g.copy_from_slice(unsafe { slice::from_raw_parts(sol.mult_g, m) });
-		mult_x_L.copy_from_slice(unsafe { slice::from_raw_parts(sol.mult_x_L, n) });
-		mult_x_U.copy_from_slice(unsafe { slice::from_raw_parts(sol.mult_x_U, n) });
+		mult_g.copy_from_slice(unsafe { slice::from_raw_parts(sol.data.mult_g, m) });
+		mult_x_L.copy_from_slice(unsafe { slice::from_raw_parts(sol.data.mult_x_L, n) });
+		mult_x_U.copy_from_slice(unsafe { slice::from_raw_parts(sol.data.mult_x_U, n) });
 
 		assert_eq!(sol.status, ApplicationReturnStatus_Solve_Succeeded);
 

@@ -228,13 +228,17 @@ extern "C"
   IPOPT_EXPORT(Bool) SetIntermediateCallback(IpoptProblem ipopt_problem,
 					     Intermediate_CB intermediate_cb);
 
-  struct SolveResult {
+  struct SolverData {
       Number* x;         /** Optimal solution */
-      Number* g;         /** Values of constraint at final point */
-      Number  obj_val;   /** Final value of objective function */
       Number* mult_g;    /** Final multipliers for constraints */
       Number* mult_x_L;  /** Final multipliers for lower variable bounds */
       Number* mult_x_U;  /** Final multipliers for upper variable */
+  };
+
+  struct SolveResult {
+      struct SolverData data;
+      Number  obj_val;   /** Final value of objective function */
+      const Number* g;   /** Values of constraint at final point */
       enum ApplicationReturnStatus status; /** Return status */
   };
 
@@ -253,6 +257,14 @@ extern "C"
                              passed unmodified to the callback
                              functions. */
   );
+
+  /**
+   * Retrieve solver data which can be modified between solves for warm starts.
+   */
+  IPOPT_EXPORT(struct SolverData) GetSolverData(
+      IpoptProblem ipopt_problem
+  );
+
 
   /**
   void IpoptStatisticsCounts;

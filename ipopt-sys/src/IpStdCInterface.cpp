@@ -250,12 +250,9 @@ SolveResult IpoptSolve(IpoptProblem ipopt_problem, UserDataPtr user_data)
   SmartPtr<TNLP> tnlp(ipopt_problem->nlp);
 
   SolveResult res;
-  res.x = nullptr;
-  res.g = nullptr;
+  res.data = GetSolverData(ipopt_problem);
+  res.g = ipopt_problem->g.data();
   res.obj_val = 0.0;
-  res.mult_g = nullptr;
-  res.mult_x_L = nullptr;
-  res.mult_x_U = nullptr;
 
   Ipopt::ApplicationReturnStatus status;
 
@@ -285,14 +282,20 @@ SolveResult IpoptSolve(IpoptProblem ipopt_problem, UserDataPtr user_data)
 
   ipopt_problem->num_solves += 1;
 
-  res.x = ipopt_problem->x.data();
-  res.g = ipopt_problem->g.data();
   res.obj_val = ipopt_problem->obj_val;
-  res.mult_g = ipopt_problem->mult_g.data();
-  res.mult_x_L = ipopt_problem->mult_x_L.data();
-  res.mult_x_U = ipopt_problem->mult_x_U.data();
   res.status = (::ApplicationReturnStatus) status;
 
   return res;
+}
+
+SolverData GetSolverData(IpoptProblem ipopt_problem)
+{
+  SolverData data;
+  data.x = ipopt_problem->x.data();
+  data.mult_g = ipopt_problem->mult_g.data();
+  data.mult_x_L = ipopt_problem->mult_x_L.data();
+  data.mult_x_U = ipopt_problem->mult_x_U.data();
+
+  return data;
 }
 
