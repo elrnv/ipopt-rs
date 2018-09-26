@@ -97,12 +97,12 @@
  *     ipopt.set_option("tol", 1e-9); // set error tolerance
  *     ipopt.set_option("print_level", 5); // set the print level (5 is the default)
  *
- *     let solve_data = ipopt.solve();
+ *     let solve_result = ipopt.solve();
  *
- *     assert_eq!(solve_data.status, SolveStatus::SolveSucceeded);
- *     assert_relative_eq!(solve_data.primal_variables[0], 1.0, epsilon = 1e-10);
- *     assert_relative_eq!(solve_data.primal_variables[1], 1.0, epsilon = 1e-10);
- *     assert_relative_eq!(solve_data.objective_value, 0.0, epsilon = 1e-10);
+ *     assert_eq!(solve_result.status, SolveStatus::SolveSucceeded);
+ *     assert_relative_eq!(solve_result.solver_data.primal_variables[0], 1.0, epsilon = 1e-10);
+ *     assert_relative_eq!(solve_result.solver_data.primal_variables[1], 1.0, epsilon = 1e-10);
+ *     assert_relative_eq!(solve_result.objective_value, 0.0, epsilon = 1e-10);
  * }
  * ```
  *
@@ -265,19 +265,26 @@ impl<'a> From<i32> for IpoptOption<'a> {
 /// An interface to mutably access internal solver data including the input problem
 /// which Ipopt owns.
 #[derive(Debug, PartialEq)]
-pub struct SolveData<'a, P> {
+pub struct SolverData<'a, P> {
     /// A mutable reference to the original input problem.
     pub problem: &'a mut P,
     /// This is the solution after the solve.
     pub primal_variables: &'a mut [Number],
-    /// These are the values of each constraint at the end of the time step.
-    pub constraint_values: &'a mut [Number],
     /// Lower bound multipliers.
     pub lower_bound_multipliers: &'a mut [Number],
     /// Upper bound multipliers.
     pub upper_bound_multipliers: &'a mut [Number],
     /// Constraint multipliers, which are available only from contrained problems.
     pub constraint_multipliers: &'a mut [Number],
+}
+
+/// A data structure to store data returned by the solver.
+#[derive(Debug, PartialEq)]
+pub struct SolveResult<'a, P> {
+    /// Data available from the solver, that can be updated by the user.
+    pub solver_data: SolverData<'a, P>,
+    /// These are the values of each constraint at the end of the time step.
+    pub constraint_values: &'a [Number],
     /// Objective value.
     pub objective_value: Number,
     /// Solve status. This enum reports the status of the last solve.
@@ -412,7 +419,7 @@ impl<P: BasicProblem> Ipopt<P> {
 
     /// Solve non-linear problem.
     /// Return the solve status and the final value of the objective function.
-    pub fn solve(&mut self) -> SolveData<P> {
+    pub fn solve(&mut self) -> SolveResult<P> {
         let res = {
             let udata_ptr = self as *mut Ipopt<P>;
             unsafe { ffi::IpoptSolve(self.nlp_internal, udata_ptr as ffi::UserDataPtr) }
@@ -425,13 +432,15 @@ impl<P: BasicProblem> Ipopt<P> {
             ..
         } = *self;
 
-        SolveData {
-            problem,
-            primal_variables: unsafe { slice::from_raw_parts_mut(res.x, num_primal_variables) },
-            constraint_values: unsafe { slice::from_raw_parts_mut(res.g, num_dual_variables) },
-            lower_bound_multipliers: unsafe { slice::from_raw_parts_mut(res.mult_x_L, num_primal_variables) },
-            upper_bound_multipliers: unsafe { slice::from_raw_parts_mut(res.mult_x_U, num_primal_variables) },
-            constraint_multipliers: unsafe { slice::from_raw_parts_mut(res.mult_g, num_dual_variables) },
+        SolveResult {
+            solver_data: SolverData {
+                problem,
+                primal_variables: unsafe { slice::from_raw_parts_mut(res.data.x, num_primal_variables) },
+                lower_bound_multipliers: unsafe { slice::from_raw_parts_mut(res.data.mult_x_L, num_primal_variables) },
+                upper_bound_multipliers: unsafe { slice::from_raw_parts_mut(res.data.mult_x_U, num_primal_variables) },
+                constraint_multipliers: unsafe { slice::from_raw_parts_mut(res.data.mult_g, num_dual_variables) },
+            },
+            constraint_values: unsafe { slice::from_raw_parts(res.g, num_dual_variables) },
             objective_value: res.obj_val,
             status: SolveStatus::new(res.status),
         }

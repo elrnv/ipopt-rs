@@ -43,8 +43,11 @@ fn quadratic_test() {
     ipopt.set_option("sb", "yes"); // suppress license message
     ipopt.set_option("print_level", 0); // suppress debug output
     {
-        let SolveData {
-            primal_variables: x,
+        let SolveResult {
+            solver_data: SolverData {
+                primal_variables: x,
+                ..
+            },
             objective_value: obj,
             status,
             ..

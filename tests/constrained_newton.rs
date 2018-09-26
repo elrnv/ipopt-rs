@@ -163,14 +163,16 @@ fn hs071_test() {
     ipopt.set_option("print_level", 0); // suppress debug output
     ipopt.set_intermediate_callback(Some(NLP::intermediate_cb));
     {
-        let SolveData {
-            primal_variables: x,
-            constraint_multipliers: mult_g,
-            lower_bound_multipliers: mult_x_l,
-            upper_bound_multipliers: mult_x_u,
+        let SolveResult {
+            solver_data: SolverData {
+                problem,
+                primal_variables: x,
+                constraint_multipliers: mult_g,
+                lower_bound_multipliers: mult_x_l,
+                upper_bound_multipliers: mult_x_u,
+            },
             status,
             objective_value: obj,
-            problem,
             ..
         } = ipopt.solve();
 
@@ -202,11 +204,14 @@ fn hs071_test() {
     ipopt.set_option("bound_frac", 1e-5);
     ipopt.set_intermediate_callback(None);
     {
-        let SolveData {
-            primal_variables: x,
-            constraint_multipliers: mult_g,
-            lower_bound_multipliers: mult_x_l,
-            upper_bound_multipliers: mult_x_u,
+        let SolveResult {
+            solver_data: SolverData {
+                primal_variables: x,
+                constraint_multipliers: mult_g,
+                lower_bound_multipliers: mult_x_l,
+                upper_bound_multipliers: mult_x_u,
+                ..
+            },
             status,
             objective_value: obj,
             ..
