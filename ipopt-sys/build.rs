@@ -143,8 +143,16 @@ fn main() {
             }
         };
 
+        let debug: bool = env::var("DEBUG").unwrap().parse().unwrap();
+        log_var!(debug);
         run(unpacked_dir.join("configure").to_str().unwrap(), |cmd| {
-            cmd.arg(format!("--prefix={}", install_dir.display())).arg(blas.clone())
+            let cmd = cmd.arg(format!("--prefix={}", install_dir.display()))
+                         .arg(blas.clone());
+            if debug {
+                cmd.arg(format!("--enable-debug-ipopt"))
+            } else {
+                cmd
+            }
         });
 
         run("make", |cmd| cmd.arg("-j8")); // TODO: Get CPU count programmatically.

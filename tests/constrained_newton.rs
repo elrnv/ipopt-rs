@@ -206,11 +206,11 @@ fn hs071_test() {
     {
         let SolveResult {
             solver_data: SolverData {
+                problem,
                 primal_variables: x,
                 constraint_multipliers: mult_g,
                 lower_bound_multipliers: mult_x_l,
                 upper_bound_multipliers: mult_x_u,
-                ..
             },
             status,
             objective_value: obj,
@@ -236,5 +236,18 @@ fn hs071_test() {
         assert_relative_eq!(mult_x_u[3], 2.755724e-12, epsilon = 1e-5);
 
         assert_relative_eq!(obj, 1.690362e+01, epsilon = 1e-5);
+        problem.g_offset[0] = 0.1;
+    }
+
+    // Solve one more time time
+    {
+        let SolveResult {
+            status,
+            objective_value: obj,
+            ..
+        } = ipopt.solve();
+
+        assert_eq!(status, SolveStatus::SolveSucceeded);
+        assert_relative_eq!(obj, 1.695880e+01, epsilon = 1e-5);
     }
 }
