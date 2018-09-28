@@ -233,7 +233,7 @@ namespace Ipopt
       }
     }
 
-    if (init_lambda) {
+    if (init_lambda && m > 0) {
       if (start_lam_==NULL) {
         retval = false;
       }

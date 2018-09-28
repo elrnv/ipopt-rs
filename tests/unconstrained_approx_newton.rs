@@ -46,6 +46,24 @@ fn quadratic_test() {
         let SolveResult {
             solver_data: SolverData {
                 primal_variables: x,
+                problem,
+                ..
+            },
+            objective_value: obj,
+            status,
+            ..
+        } = ipopt.solve();
+        assert_eq!(status, SolveStatus::SolveSucceeded);
+        assert_relative_eq!(x[0], 1.0, epsilon = 1e-10);
+        assert_relative_eq!(x[1], 1.0, epsilon = 1e-10);
+        assert_relative_eq!(obj, 0.0, epsilon = 1e-10);
+    }
+
+    ipopt.set_option("warm_start_init_point", "yes");
+    {
+        let SolveResult {
+            solver_data: SolverData {
+                primal_variables: x,
                 ..
             },
             objective_value: obj,
