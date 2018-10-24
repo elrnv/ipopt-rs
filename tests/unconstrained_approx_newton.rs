@@ -46,7 +46,6 @@ fn quadratic_test() {
         let SolveResult {
             solver_data: SolverData {
                 primal_variables: x,
-                problem,
                 ..
             },
             objective_value: obj,

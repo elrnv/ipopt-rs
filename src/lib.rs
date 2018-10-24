@@ -265,7 +265,7 @@ impl<'a> From<i32> for IpoptOption<'a> {
 /// An interface to mutably access internal solver data including the input problem
 /// which Ipopt owns.
 #[derive(Debug, PartialEq)]
-pub struct SolverData<'a, P> {
+pub struct SolverData<'a, P: 'a> {
     /// A mutable reference to the original input problem.
     pub problem: &'a mut P,
     /// This is the solution after the solve.
@@ -280,7 +280,7 @@ pub struct SolverData<'a, P> {
 
 /// A data structure to store data returned by the solver.
 #[derive(Debug, PartialEq)]
-pub struct SolveResult<'a, P> {
+pub struct SolveResult<'a, P: 'a> {
     /// Data available from the solver, that can be updated by the user.
     pub solver_data: SolverData<'a, P>,
     /// These are the values of each constraint at the end of the time step.
