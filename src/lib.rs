@@ -112,7 +112,7 @@
 
 extern crate ipopt_sys as ffi;
 
-use ffi::{Bool, Int};
+use crate::ffi::{Bool, Int};
 use std::ffi::CString;
 use std::slice;
 
@@ -974,7 +974,7 @@ pub enum SolveStatus {
 #[allow(non_snake_case)]
 impl SolveStatus {
     fn new(status: ffi::ApplicationReturnStatus) -> Self {
-        use SolveStatus as RS;
+        use crate::SolveStatus as RS;
         match status {
             ffi::ApplicationReturnStatus_Solve_Succeeded              => RS::SolveSucceeded,
             ffi::ApplicationReturnStatus_Solved_To_Acceptable_Level   => RS::SolvedToAcceptableLevel,
