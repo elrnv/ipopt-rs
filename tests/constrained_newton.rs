@@ -164,7 +164,7 @@ fn hs071_test() {
     ipopt.set_intermediate_callback(Some(NLP::intermediate_cb));
     {
         let SolveResult {
-            solver_data: SolverData {
+            solver_data: SolverDataMut {
                 problem,
                 primal_variables: x,
                 constraint_multipliers: mult_g,
@@ -205,7 +205,7 @@ fn hs071_test() {
     ipopt.set_intermediate_callback(None);
     {
         let SolveResult {
-            solver_data: SolverData {
+            solver_data: SolverDataMut {
                 problem,
                 primal_variables: x,
                 constraint_multipliers: mult_g,

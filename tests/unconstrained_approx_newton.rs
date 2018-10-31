@@ -44,7 +44,7 @@ fn quadratic_test() {
     ipopt.set_option("print_level", 0); // suppress debug output
     {
         let SolveResult {
-            solver_data: SolverData {
+            solver_data: SolverDataMut {
                 primal_variables: x,
                 ..
             },
@@ -61,7 +61,7 @@ fn quadratic_test() {
     ipopt.set_option("warm_start_init_point", "yes");
     {
         let SolveResult {
-            solver_data: SolverData {
+            solver_data: SolverDataMut {
                 primal_variables: x,
                 ..
             },

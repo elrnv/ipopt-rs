@@ -265,7 +265,7 @@ impl<'a> From<i32> for IpoptOption<'a> {
 /// An interface to mutably access internal solver data including the input problem
 /// which Ipopt owns.
 #[derive(Debug, PartialEq)]
-pub struct SolverData<'a, P: 'a> {
+pub struct SolverDataMut<'a, P: 'a> {
     /// A mutable reference to the original input problem.
     pub problem: &'a mut P,
     /// This is the solution after the solve.
@@ -278,11 +278,26 @@ pub struct SolverData<'a, P: 'a> {
     pub constraint_multipliers: &'a mut [Number],
 }
 
+/// An interface to access internal solver data including the input problem immutably.
+#[derive(Debug, PartialEq)]
+pub struct SolverDataRef<'a, P: 'a> {
+    /// A mutable reference to the original input problem.
+    pub problem: &'a P,
+    /// This is the solution after the solve.
+    pub primal_variables: &'a [Number],
+    /// Lower bound multipliers.
+    pub lower_bound_multipliers: &'a [Number],
+    /// Upper bound multipliers.
+    pub upper_bound_multipliers: &'a [Number],
+    /// Constraint multipliers, which are available only from contrained problems.
+    pub constraint_multipliers: &'a [Number],
+}
+
 /// A data structure to store data returned by the solver.
 #[derive(Debug, PartialEq)]
 pub struct SolveResult<'a, P: 'a> {
     /// Data available from the solver, that can be updated by the user.
-    pub solver_data: SolverData<'a, P>,
+    pub solver_data: SolverDataMut<'a, P>,
     /// These are the values of each constraint at the end of the time step.
     pub constraint_values: &'a [Number],
     /// Objective value.
@@ -433,7 +448,7 @@ impl<P: BasicProblem> Ipopt<P> {
         } = *self;
 
         SolveResult {
-            solver_data: SolverData {
+            solver_data: SolverDataMut {
                 problem,
                 primal_variables: unsafe { slice::from_raw_parts_mut(res.data.x, num_primal_variables) },
                 lower_bound_multipliers: unsafe { slice::from_raw_parts_mut(res.data.mult_x_L, num_primal_variables) },
@@ -449,7 +464,7 @@ impl<P: BasicProblem> Ipopt<P> {
     /// Get data for inspection and updating from the internal solver. This is useful for updating
     /// initial guesses between solves for instance.
     #[allow(non_snake_case)]
-    pub fn get_solver_data(&mut self) -> SolverData<P> {
+    pub fn solver_data_mut(&mut self) -> SolverDataMut<P> {
         let Ipopt {
             nlp_interface: ref mut problem,
             nlp_internal,
@@ -465,12 +480,39 @@ impl<P: BasicProblem> Ipopt<P> {
             mult_x_U,
         } = unsafe { ffi::GetSolverData(nlp_internal) };
 
-        SolverData {
+        SolverDataMut {
             problem,
             primal_variables: unsafe { slice::from_raw_parts_mut(x, num_primal_variables) },
             lower_bound_multipliers: unsafe { slice::from_raw_parts_mut(mult_x_L, num_primal_variables) },
             upper_bound_multipliers: unsafe { slice::from_raw_parts_mut(mult_x_U, num_primal_variables) },
             constraint_multipliers: unsafe { slice::from_raw_parts_mut(mult_g, num_dual_variables) },
+        }
+    }
+
+    /// Get data for inspection from the internal solver.
+    #[allow(non_snake_case)]
+    pub fn solver_data_ref(&self) -> SolverDataRef<P> {
+        let Ipopt {
+            nlp_interface: ref problem,
+            nlp_internal,
+            num_primal_variables,
+            num_dual_variables,
+            ..
+        } = *self;
+
+        let ffi::SolverData {
+            x,
+            mult_g,
+            mult_x_L,
+            mult_x_U,
+        } = unsafe { ffi::GetSolverData(nlp_internal) };
+
+        SolverDataRef {
+            problem,
+            primal_variables: unsafe { slice::from_raw_parts(x, num_primal_variables) },
+            lower_bound_multipliers: unsafe { slice::from_raw_parts(mult_x_L, num_primal_variables) },
+            upper_bound_multipliers: unsafe { slice::from_raw_parts(mult_x_U, num_primal_variables) },
+            constraint_multipliers: unsafe { slice::from_raw_parts(mult_g, num_dual_variables) },
         }
     }
 
