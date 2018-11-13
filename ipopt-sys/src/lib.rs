@@ -59,9 +59,12 @@ mod tests {
 		let mut mult_x_U = Vec::with_capacity(n);
         mult_x_U.resize(n, 0.0);
 
-        let nlp = unsafe {
+        let mut nlp: IpoptProblem = ::std::ptr::null_mut();
+
+        let create_status = unsafe {
             /* create the IpoptProblem */
             CreateIpoptProblem(
+                &mut nlp as *mut IpoptProblem,
                 n as Index,
 			   	x_L.as_mut_ptr(),
 			   	x_U.as_mut_ptr(),
@@ -82,7 +85,9 @@ mod tests {
                 Some(eval_h))
         };
 
-		/* set some options */
+        assert_eq!(create_status, CreateProblemStatus_Success);
+
+        /* set some options */
         /* Unfortunately Ipopt strings are non-const, making this awkward. */
         let mut tol_str = CString::new("tol").unwrap();
         let mut mu_strategy_str = CString::new("mu_strategy").unwrap();

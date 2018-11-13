@@ -114,6 +114,22 @@ extern "C"
 				  Number alpha_du, Number alpha_pr,
 				  Index ls_trials, UserDataPtr user_data);
 
+  enum CreateProblemStatus {
+      Success,
+      MissingInitialGuess,
+      TooFewOptimizationVariables,
+      ConstraintSizeIsNegative,
+      MissingConstraintLowerBound,
+      MissingConstraintUpperBound,
+      NumConstraintsVsBoundsMismatch,
+      HaveJacobianElementsButNoConstraints,
+      HaveConstraintsButNoJacobianElements,
+      InvalidNumHessianElements,
+      MissingEvalF,
+      MissingEvalGradF,
+      HaveConstraintsButNoEvalGOrEvalJacG,
+  };
+
   /** Function for creating a new Ipopt Problem object.  This function
    *  returns an object that can be passed to the IpoptSolve call.  It
    *  contains the basic definition of the optimization problem, such
@@ -125,8 +141,9 @@ extern "C"
    *
    *  If NULL is returned, there was a problem with one of the inputs
    *  or reading the options file. */
-  IPOPT_EXPORT(IpoptProblem) CreateIpoptProblem(
-      Index n             /** Number of optimization variables */
+  IPOPT_EXPORT(enum CreateProblemStatus) CreateIpoptProblem(
+      IpoptProblem * const p /** Output problem */
+    , Index n             /** Number of optimization variables */
     , const Number* x_L   /** Lower bounds on variables. This array of
                               size n is copied internally, so that the
                               caller can change the incoming data after

@@ -46,7 +46,8 @@ struct IpoptProblemInfo
   vector<Number> mult_x_U;
 };
 
-IpoptProblem CreateIpoptProblem(
+enum CreateProblemStatus CreateIpoptProblem(
+  IpoptProblem * const out_problem,
   Index n,
   const Number* x_L,
   const Number* x_U,
@@ -69,10 +70,31 @@ IpoptProblem CreateIpoptProblem(
   using namespace Ipopt;
 
   // make sure input is Ok
-  if (n<1 || m<0 || !init_x || !x_L || !x_U || (m>0 && (!g_L || !g_U)) ||
-      (m==0 && nele_jac != 0) || (m>0 && nele_jac < 1) || nele_hess < 0 ||
-      !eval_f || !eval_grad_f || (m>0 && (!eval_g || !eval_jac_g))) {
-    return NULL;
+  if ( n<1 ) {
+      return TooFewOptimizationVariables;
+  } else if ( m<0 ) {
+      return ConstraintSizeIsNegative;
+  } else if ( !init_x ) {
+      return MissingInitialGuess;
+  } else if ( !x_L ) {
+      return MissingConstraintLowerBound;
+  } else if ( !x_U ) {
+      return MissingConstraintUpperBound;
+  } else if ( m>0 && (!g_L || !g_U)) {
+      return NumConstraintsVsBoundsMismatch;
+  } else if ( m==0 && nele_jac != 0) {
+      return HaveJacobianElementsButNoConstraints;
+  } else if ( m>0 && nele_jac < 1) {
+      return HaveConstraintsButNoJacobianElements;
+  } else if ( nele_hess < 0 ) {
+      return InvalidNumHessianElements;
+  } else if ( !eval_f ) {
+      return MissingEvalF;
+  } else if ( !eval_grad_f ) {
+      return MissingEvalGradF;
+  } else if ( m>0 && (!eval_g || !eval_jac_g) ) {
+      return HaveConstraintsButNoEvalGOrEvalJacG;
+      *out_problem = NULL;
   }
 
   IpoptProblem problem = new IpoptProblemInfo;
@@ -169,8 +191,8 @@ IpoptProblem CreateIpoptProblem(
   }
 
   problem->app->RethrowNonIpoptException(false);
-
-  return problem;
+  *out_problem = problem;
+  return Success;
 }
 
 void FreeIpoptProblem(IpoptProblem ipopt_problem)

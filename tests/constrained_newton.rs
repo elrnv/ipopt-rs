@@ -156,7 +156,7 @@ impl ConstrainedProblem for NLP {
 #[test]
 fn hs071_test() {
     let nlp = NLP { g_offset: [0.0, 0.0] };
-    let mut ipopt = Ipopt::new(nlp);
+    let mut ipopt = Ipopt::new(nlp).unwrap();
     ipopt.set_option("tol", 1e-7);
     ipopt.set_option("mu_strategy", "adaptive");
     ipopt.set_option("sb", "yes"); // suppress license message

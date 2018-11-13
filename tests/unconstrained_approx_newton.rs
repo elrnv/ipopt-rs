@@ -37,7 +37,7 @@ impl BasicProblem for NLP {
 #[test]
 fn quadratic_test() {
     let nlp = NLP { };
-    let mut ipopt = Ipopt::new_unconstrained(nlp);
+    let mut ipopt = Ipopt::new_unconstrained(nlp).unwrap();
     ipopt.set_option("tol", 1e-9);
     ipopt.set_option("mu_strategy", "adaptive");
     ipopt.set_option("sb", "yes"); // suppress license message
