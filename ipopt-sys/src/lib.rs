@@ -36,17 +36,9 @@ mod tests {
 
         /* set the number of variables and allocate space for the bounds */
         let n = 4;  // number of variabes
-        let mut x_L = Vec::with_capacity(n); // lower bounds on x
-        let mut x_U = Vec::with_capacity(n); // upper bounds on x
-        /* set the values for the variable bounds */
-        x_L.resize(n, 1.0);
-        x_U.resize(n, 5.0);
 
         /* set the number of constraints and allocate space for the bounds */
         let m = 2usize; // number of constraints
-        /* set the values of the constraint bounds */
-        let mut g_L = vec![25.0, 40.0]; // lower bounds on g
-        let mut g_U = vec![2.0e19, 40.0]; // upper bounds on g
 
         /* initialize values for the initial point */
         let mut x = vec![1.0, 5.0, 5.0, 1.0];
@@ -66,18 +58,15 @@ mod tests {
             CreateIpoptProblem(
                 &mut nlp as *mut IpoptProblem,
                 n as Index,
-                x_L.as_mut_ptr(),
-                x_U.as_mut_ptr(),
                 x.as_mut_ptr(),         
                 mult_x_L.as_mut_ptr(),  // Initial values for the multipliers for
                                         // the lower variable bounds. (if warm start)
                 mult_x_U.as_mut_ptr(),  // Initial values for the multipliers for
                                         // the upper variable bounds. (if warm start)
                 m as Index,
-                g_L.as_mut_ptr(),
-                g_U.as_mut_ptr(),
                 mult_g.as_mut_ptr(),    // Initial values for constraint multipliers.
                 8, 10, 0, 
+                Some(bounds),
                 Some(eval_f),
                 Some(eval_g),
                 Some(eval_grad_f),
@@ -203,6 +192,32 @@ mod tests {
     }
 
     /* Function Implementations */
+    unsafe extern "C" fn bounds(
+        n: Index,
+        x_l: *mut Number,
+        x_u: *mut Number,
+        m: Index,
+        g_l: *mut Number,
+        g_u: *mut Number,
+        _user_data: UserDataPtr) -> Bool {
+      assert!(n == 4);
+      assert!(m == 2);
+
+      /* Set the values of the constraint bounds */
+      *g_l.offset(0) = 25.0;
+      *g_l.offset(1) = 40.0;
+      *g_u.offset(0) = 2.0e19;
+      *g_u.offset(1) = 40.0; 
+
+      /* Set the values for the variable bounds */
+      for i in 0..n as isize {
+          *x_l.offset(i) = 1.0;
+          *x_u.offset(i) = 5.0;
+      }
+
+      true as Bool
+    }
+
     unsafe extern "C" fn eval_f(
         n: Index,
         x: *mut Number,

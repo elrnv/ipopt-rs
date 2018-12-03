@@ -65,6 +65,12 @@ extern "C"
    *  and individual callback function */
   typedef void * UserDataPtr;
 
+  /** Type defining the callback function for specifying variable and
+   * constraint lower and upper bounds. */
+  typedef Bool (*Bounds_CB)(Index n, Number* x_l, Number* x_u,
+                            Index m, Number* g_l, Number* g_u,
+                            UserDataPtr user_data);
+
   /** Type defining the callback function for evaluating the value of
    *  the objective function.  Return value should be set to false if
    *  there was a problem doing the evaluation. */
@@ -119,12 +125,10 @@ extern "C"
       MissingInitialGuess,
       TooFewOptimizationVariables,
       ConstraintSizeIsNegative,
-      MissingConstraintLowerBound,
-      MissingConstraintUpperBound,
-      NumConstraintsVsBoundsMismatch,
       HaveJacobianElementsButNoConstraints,
       HaveConstraintsButNoJacobianElements,
       InvalidNumHessianElements,
+      MissingBounds,
       MissingEvalF,
       MissingEvalGradF,
       HaveConstraintsButNoEvalGOrEvalJacG,
@@ -144,42 +148,10 @@ extern "C"
   IPOPT_EXPORT(enum CreateProblemStatus) CreateIpoptProblem(
       IpoptProblem * const p /** Output problem */
     , Index n             /** Number of optimization variables */
-    , const Number* x_L   /** Lower bounds on variables. This array of
-                              size n is copied internally, so that the
-                              caller can change the incoming data after
-                              return without that IpoptProblem is
-                              modified.  Any value less or equal than
-                              the number specified by option
-                              'nlp_lower_bound_inf' is interpreted to
-                              be minus infinity. */
-    , const Number* x_U   /** Upper bounds on variables. This array of
-                              size n is copied internally, so that the
-                              caller can change the incoming data after
-                              return without that IpoptProblem is
-                              modified.  Any value greater or equal
-                              than the number specified by option
-                              'nlp_upper_bound_inf' is interpreted to
-                              be plus infinity. */
     , const Number* init_x
     , const Number* init_z_L
     , const Number* init_z_U
     , Index m             /** Number of constraints. */
-    , const Number* g_L   /** Lower bounds on constraints. This array of
-                              size m is copied internally, so that the
-                              caller can change the incoming data after
-                              return without that IpoptProblem is
-                              modified.  Any value less or equal than
-                              the number specified by option
-                              'nlp_lower_bound_inf' is interpreted to
-                              be minus infinity. */
-    , const Number* g_U   /** Upper bounds on constraints. This array of
-                              size m is copied internally, so that the
-                              caller can change the incoming data after
-                              return without that IpoptProblem is
-                              modified.  Any value greater or equal
-                              than the number specified by option
-                              'nlp_upper_bound_inf' is interpreted to
-                              be plus infinity. */
     , const Number* init_lam
     , Index nele_jac      /** Number of non-zero elements in constraint
                               Jacobian. */
@@ -187,6 +159,9 @@ extern "C"
                               Lagrangian. */
     , Index index_style   /** indexing style for iRow & jCol,
 				 0 for C style, 1 for Fortran style */
+    , Bounds_CB bounds    /** Callback function for setting lower and
+                              upper bounds on variable and constraints.
+                              */
     , Eval_F_CB eval_f    /** Callback function for evaluating
                               objective function */
     , Eval_G_CB eval_g    /** Callback function for evaluating

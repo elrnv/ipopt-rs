@@ -38,9 +38,7 @@ namespace Ipopt
      *  that the constrctor does not make a copy of any of the Number
      *  arrays, i.e. it is up to the called to keep them around. */
     StdInterfaceTNLP(Index n_var,
-                     const Number* x_L, const Number* x_U,
                      Index n_con,
-                     const Number* g_L, const Number* g_U,
                      Index nele_jac,
                      Index nele_hess,
                      Index index_style,
@@ -48,6 +46,7 @@ namespace Ipopt
                      const Number* start_lam,
                      const Number* start_z_L,
                      const Number* start_z_U,
+                     Bounds_CB bounds,
                      Eval_F_CB eval_f,
                      Eval_G_CB eval_g,
                      Eval_Grad_F_CB eval_grad_f,
@@ -155,14 +154,6 @@ namespace Ipopt
     const Index n_var_;
     /** Number of constraints */
     const Index n_con_;
-    /** Pointer to Number array containing lower bounds for variables */
-    const Number* x_L_;
-    /** Pointer to Number array containing upper bounds for variables */
-    const Number* x_U_;
-    /** Pointer to Number array containing lower bounds for constraints */
-    const Number* g_L_;
-    /** Pointer to Number array containing upper bounds for constraints */
-    const Number* g_U_;
     /** Number of non-zero elements in the constraint Jacobian */
     const Index nele_jac_;
     /** Number of non-zero elements in the Hessian */
@@ -180,6 +171,9 @@ namespace Ipopt
     /** Pointer to Number array containing starting values for upper
      *  bound multipliers */
     const Number* start_z_U_;
+    /** Pointer to callback function evaluating lower and upper bounds on
+     *  variables and constraint functions */
+    Bounds_CB bounds_;
     /** Pointer to callback function evaluating value of objective function */
     Eval_F_CB eval_f_;
     /**  Pointer to callback function evaluating value of constraints */

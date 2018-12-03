@@ -14,9 +14,7 @@
 namespace Ipopt
 {
   StdInterfaceTNLP::StdInterfaceTNLP(Index n_var,
-                                     const Number* x_L, const Number* x_U,
                                      Index n_con,
-                                     const Number* g_L, const Number* g_U,
                                      Index nele_jac,
                                      Index nele_hess,
                                      Index index_style,
@@ -24,6 +22,7 @@ namespace Ipopt
                                      const Number* start_lam,
                                      const Number* start_z_L,
                                      const Number* start_z_U,
+                                     Bounds_CB bounds,
                                      Eval_F_CB eval_f,
                                      Eval_G_CB eval_g,
                                      Eval_Grad_F_CB eval_grad_f,
@@ -44,10 +43,6 @@ namespace Ipopt
       TNLP(),
       n_var_(n_var),
       n_con_(n_con),
-      x_L_(x_L),
-      x_U_(x_U),
-      g_L_(g_L),
-      g_U_(g_U),
       nele_jac_(nele_jac),
       nele_hess_(nele_hess),
       index_style_(index_style),
@@ -55,6 +50,7 @@ namespace Ipopt
       start_lam_(start_lam),
       start_z_L_(start_z_L),
       start_z_U_(start_z_U),
+      bounds_(bounds),
       eval_f_(eval_f),
       eval_g_(eval_g),
       eval_grad_f_(eval_grad_f),
@@ -77,14 +73,6 @@ namespace Ipopt
                      "The number of variables must be at least 1.");
     ASSERT_EXCEPTION(n_con_>=0, INVALID_STDINTERFACE_NLP,
                      "The number of constrains must be non-negative.");
-    ASSERT_EXCEPTION(x_L_, INVALID_STDINTERFACE_NLP,
-                     "No lower bounds for variables provided.");
-    ASSERT_EXCEPTION(x_U_, INVALID_STDINTERFACE_NLP,
-                     "No upper bounds for variables provided.");
-    ASSERT_EXCEPTION(g_L_ || n_con_==0, INVALID_STDINTERFACE_NLP,
-                     "No lower bounds for constraints provided.");
-    ASSERT_EXCEPTION(g_U_ || n_con_==0, INVALID_STDINTERFACE_NLP,
-                     "No upper bounds for constraints provided.");
     ASSERT_EXCEPTION(nele_jac_>=0, INVALID_STDINTERFACE_NLP,
                      "Number of non-zero elements in constraint Jacobian must be non-negative.");
     ASSERT_EXCEPTION(nele_hess_>=0, INVALID_STDINTERFACE_NLP,
@@ -93,6 +81,8 @@ namespace Ipopt
                      "Valid index styles are 0 (C style) or 1 (Fortran style)");
 
 
+    ASSERT_EXCEPTION(bounds_, INVALID_STDINTERFACE_NLP,
+                     "No callback for setting bounds on variables and constraints provided.");
     ASSERT_EXCEPTION(eval_f_, INVALID_STDINTERFACE_NLP,
                      "No callback function for evaluating the value of objective function provided.");
     ASSERT_EXCEPTION(eval_g_, INVALID_STDINTERFACE_NLP,
@@ -153,17 +143,9 @@ namespace Ipopt
     DBG_ASSERT(n == n_var_);
     DBG_ASSERT(m == n_con_);
 
-    for (Index i=0; i<n; i++) {
-      x_l[i] = x_L_[i];
-      x_u[i] = x_U_[i];
-    }
+    Bool retval = (*bounds_)(n, x_l, x_u, m, g_l, g_u, user_data_);
 
-    for (Index i=0; i<m; i++) {
-      g_l[i] = g_L_[i];
-      g_u[i] = g_U_[i];
-    }
-
-    return true;
+    return (retval!=0);
   }
 
   bool StdInterfaceTNLP::get_scaling_parameters(

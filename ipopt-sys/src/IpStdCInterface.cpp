@@ -19,13 +19,10 @@ using namespace std;
 
 struct IpoptProblemInfo
 {
-  vector<Number> x_L;
-  vector<Number> x_U;
-  vector<Number> g_L;
-  vector<Number> g_U;
   Index nele_jac;
   Index nele_hess;
   Index index_style;
+  Bounds_CB bounds;
   Eval_F_CB eval_f;
   Eval_G_CB eval_g;
   Eval_Grad_F_CB eval_grad_f;
@@ -49,18 +46,15 @@ struct IpoptProblemInfo
 enum CreateProblemStatus CreateIpoptProblem(
   IpoptProblem * const out_problem,
   Index n,
-  const Number* x_L,
-  const Number* x_U,
   const Number* init_x,
   const Number* init_mult_x_L,
   const Number* init_mult_x_U,
   Index m,
-  const Number* g_L,
-  const Number* g_U,
   const Number* init_mult_g,
   Index nele_jac,
   Index nele_hess,
   Index index_style,
+  Bounds_CB bounds,
   Eval_F_CB eval_f,
   Eval_G_CB eval_g,
   Eval_Grad_F_CB eval_grad_f,
@@ -76,12 +70,8 @@ enum CreateProblemStatus CreateIpoptProblem(
       return ConstraintSizeIsNegative;
   } else if ( !init_x ) {
       return MissingInitialGuess;
-  } else if ( !x_L ) {
-      return MissingConstraintLowerBound;
-  } else if ( !x_U ) {
-      return MissingConstraintUpperBound;
-  } else if ( m>0 && (!g_L || !g_U)) {
-      return NumConstraintsVsBoundsMismatch;
+  } else if ( !bounds ) {
+      return MissingBounds;
   } else if ( m==0 && nele_jac != 0) {
       return HaveJacobianElementsButNoConstraints;
   } else if ( m>0 && nele_jac < 1) {
@@ -99,11 +89,6 @@ enum CreateProblemStatus CreateIpoptProblem(
 
   IpoptProblem problem = new IpoptProblemInfo;
 
-  problem->x_L.reserve(n);
-  copy_n(x_L, n, std::back_inserter(problem->x_L));
-  problem->x_U.reserve(n);
-  copy_n(x_U, n, std::back_inserter(problem->x_U));
-
   // Copy the starting point information
   problem->x.reserve(n);
   copy_n(init_x, n, back_inserter(problem->x));
@@ -119,11 +104,6 @@ enum CreateProblemStatus CreateIpoptProblem(
   if (m>0) {
     problem->g.resize(m, 0); // initialize solution memory
 
-    problem->g_L.reserve(m);
-    copy_n(g_L, m, back_inserter(problem->g_L));
-    problem->g_U.reserve(m);
-    copy_n(g_U, m, back_inserter(problem->g_U));
-
     // Copy the starting point information
     if (init_mult_g) {
       problem->mult_g.reserve(m);
@@ -136,6 +116,7 @@ enum CreateProblemStatus CreateIpoptProblem(
   problem->nele_jac = nele_jac;
   problem->nele_hess = nele_hess;
   problem->index_style = index_style;
+  problem->bounds = bounds;
   problem->eval_f = eval_f;
   problem->eval_g = eval_g;
   problem->eval_grad_f = eval_grad_f;
@@ -155,8 +136,8 @@ enum CreateProblemStatus CreateIpoptProblem(
   try {
     // Create the original nlp
     problem->nlp = new StdInterfaceTNLP(
-            n, problem->x_L.data(), problem->x_U.data(),
-            m, problem->g_L.data(), problem->g_U.data(),
+            n,
+            m,
             problem->nele_jac,
             problem->nele_hess,
             problem->index_style,
@@ -164,6 +145,7 @@ enum CreateProblemStatus CreateIpoptProblem(
             problem->mult_g.data(),
             problem->mult_x_L.data(),
             problem->mult_x_U.data(),
+            problem->bounds,
             problem->eval_f,
             problem->eval_g,
             problem->eval_grad_f,
