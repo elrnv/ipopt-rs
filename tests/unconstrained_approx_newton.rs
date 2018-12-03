@@ -27,11 +27,11 @@ impl BasicProblem for NLP {
         true
     }
     fn initial_point(&self) -> Vec<Number> { vec![0.0, 0.0] }
-    fn objective(&mut self, x: &[Number], obj: &mut Number) -> bool {
+    fn objective(&self, x: &[Number], obj: &mut Number) -> bool {
         *obj = (x[0] - 1.0)*(x[0] - 1.0) + (x[1] - 1.0)*(x[1] - 1.0);
         true
     }
-    fn objective_grad(&mut self, x: &[Number], grad_f: &mut [Number]) -> bool {
+    fn objective_grad(&self, x: &[Number], grad_f: &mut [Number]) -> bool {
         grad_f[0] = 2.0*(x[0] - 1.0);
         grad_f[1] = 2.0*(x[1] - 1.0);
         true
