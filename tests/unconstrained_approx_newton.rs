@@ -21,7 +21,11 @@ struct NLP {
 
 impl BasicProblem for NLP {
     fn num_variables(&self) -> usize { 2 }
-    fn bounds(&self) -> (Vec<Number>, Vec<Number>) { (vec![-1e20; 2], vec![1e20; 2]) }
+    fn bounds(&self, x_l: &mut [Number], x_u: &mut [Number]) -> bool {
+        x_l.swap_with_slice(vec![-1e20; 2].as_mut_slice());
+        x_u.swap_with_slice(vec![1e20; 2].as_mut_slice());
+        true
+    }
     fn initial_point(&self) -> Vec<Number> { vec![0.0, 0.0] }
     fn objective(&mut self, x: &[Number], obj: &mut Number) -> bool {
         *obj = (x[0] - 1.0)*(x[0] - 1.0) + (x[1] - 1.0)*(x[1] - 1.0);

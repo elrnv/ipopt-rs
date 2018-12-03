@@ -65,8 +65,10 @@
  *     // The variables are unbounded. Any lower bound lower than -10^9 and upper bound higher
  *     // than 10^9 is treated effectively as infinity. These absolute infinity limits can be
  *     // changed via the `nlp_lower_bound_inf` and `nlp_upper_bound_inf` Ipopt options.
- *     fn bounds(&self) -> (Vec<Number>, Vec<Number>) {
- *         (vec![-1e20; 2], vec![1e20; 2])
+ *     fn bounds(&self, x_l: &mut [Number], x_u: &mut [Number]) -> bool {
+ *         x_l.swap_with_slice(vec![-1e20; 2].as_mut_slice());
+ *         x_u.swap_with_slice(vec![1e20; 2].as_mut_slice());
+ *         true
  *     }
  *
  *     // Set the initial conditions for the solver.
@@ -137,9 +139,9 @@ pub trait BasicProblem {
     /// Total number of variables of the non-linear problem.
     fn num_variables(&self) -> usize;
 
-    /// Specify the pair of variable bounds `(lower, upper)`.
-    /// The returned `Vec`s must have the same size as `num_variables`.
-    fn bounds(&self) -> (Vec<Number>, Vec<Number>);
+    /// Specify lower and upper variable bounds given by `x_l` and `x_u` respectively.
+    /// Both slices will have the same size as what `num_variables` returns.
+    fn bounds(&self, x_l: &mut [Number], x_u: &mut [Number]) -> bool;
 
     /// Construct the initial guess for Ipopt to start with.
     /// The returned `Vec` must have the same size as `num_variables`.
@@ -195,10 +197,9 @@ pub trait ConstrainedProblem : BasicProblem {
     /// The output slice `g` is guaranteed to be the same size as `num_constraints`.
     /// This function is internally called by Ipopt callback `eval_g`.
     fn constraint(&mut self, x: &[Number], g: &mut [Number]) -> bool;
-    /// Specify the pair of bounds `(lower, upper)` on the value of the constraint
-    /// function.
-    /// The returned `Vec`s must each have the same size as `num_constraints`.
-    fn constraint_bounds(&self) -> (Vec<Number>, Vec<Number>);
+    /// Specify lower and upper bounds, `g_l` and `g_u` respectively, on the constraint function.
+    /// Both slices will have the same size as what `num_constraints` returns.
+    fn constraint_bounds(&self, g_l: &mut [Number], g_u: &mut [Number]) -> bool;
     /// Constraint Jacobian indices. These are the row and column indices of the
     /// non-zeros in the sparse representation of the matrix.
     /// This function is internally called by Ipopt callback `eval_jac_g`.
@@ -353,8 +354,6 @@ unsafe impl<P: BasicProblem> Send for Ipopt<P> {}
 impl<P: BasicProblem> Ipopt<P> {
     /// Create a new unconstrained non-linear problem.
     pub fn new_unconstrained(nlp: P) -> Result<Self, CreateError> {
-        let (x_l, x_u) = nlp.bounds();
-
         let num_vars = nlp.num_variables();
 
         let x = nlp.initial_point();
@@ -365,9 +364,6 @@ impl<P: BasicProblem> Ipopt<P> {
         }
         if x.len() != num_vars {
             return Err(CreateError::InvalidInitialPoint);
-        }
-        if x_l.len() != num_vars || x_u.len() != num_vars {
-            return Err(CreateError::InvalidBounds);
         }
 
         let mut mult_x_l = Vec::with_capacity(num_vars);
@@ -381,18 +377,15 @@ impl<P: BasicProblem> Ipopt<P> {
             ffi::CreateIpoptProblem(
                 &mut nlp_internal as *mut ffi::IpoptProblem,
                 num_vars as Index,
-                x_l.as_ptr(),
-                x_u.as_ptr(),
                 x.as_ptr(),
                 mult_x_l.as_ptr(),
                 mult_x_u.as_ptr(),
                 0, // no constraints
                 ::std::ptr::null(),
-                ::std::ptr::null(),
-                ::std::ptr::null(),
                 0, // no non-zeros in constraint Jacobian
                 0, // no hessian
                 nlp.indexing_style() as Index,
+                Some(Self::variable_only_bounds),
                 Some(Self::eval_f),
                 Some(Self::eval_g_none),
                 Some(Self::eval_grad_f),
@@ -552,6 +545,21 @@ impl<P: BasicProblem> Ipopt<P> {
      * Ipopt C API
      */
 
+    /// Specify lower and upper bounds for variables. No constraints on basic problems.
+    unsafe extern "C" fn variable_only_bounds(
+        n: Index,
+        x_l: *mut Number,
+        x_u: *mut Number,
+        m: Index,
+        _g_l: *mut Number,
+        _g_u: *mut Number,
+        user_data: ffi::UserDataPtr) -> Bool
+    {
+        assert_eq!(m, 0);
+        let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
+        nlp.bounds(slice::from_raw_parts_mut(x_l, n as usize), slice::from_raw_parts_mut(x_u, n as usize)) as Bool
+    }
+
     /// Evaluate the objective function.
     unsafe extern "C" fn eval_f(
         n: Index,
@@ -657,8 +665,6 @@ impl<P: BasicProblem> Ipopt<P> {
 impl<P: NewtonProblem> Ipopt<P> {
     /// Create a new newton problem.
     pub fn new_newton(nlp: P) -> Result<Self, CreateError> {
-        let (x_l, x_u) = nlp.bounds();
-
         let num_vars = nlp.num_variables();
 
         let x = nlp.initial_point();
@@ -669,9 +675,6 @@ impl<P: NewtonProblem> Ipopt<P> {
         }
         if x.len() != num_vars {
             return Err(CreateError::InvalidInitialPoint);
-        }
-        if x_l.len() != num_vars || x_u.len() != num_vars {
-            return Err(CreateError::InvalidBounds);
         }
 
         let mut mult_x_l = Vec::with_capacity(num_vars);
@@ -685,18 +688,15 @@ impl<P: NewtonProblem> Ipopt<P> {
             ffi::CreateIpoptProblem(
                 &mut nlp_internal as *mut ffi::IpoptProblem,
                 num_vars as Index,
-                x_l.as_ptr(),
-                x_u.as_ptr(),
                 x.as_ptr(),
                 mult_x_l.as_ptr(),
                 mult_x_u.as_ptr(),
                 0, // no constraints
                 ::std::ptr::null(),
-                ::std::ptr::null(),
-                ::std::ptr::null(),
                 0, // no non-zeros in constraint Jacobian
                 nlp.num_hessian_non_zeros() as Index,
                 nlp.indexing_style() as Index,
+                Some(Self::variable_only_bounds),
                 Some(Self::eval_f),
                 Some(Self::eval_g_none),
                 Some(Self::eval_grad_f),
@@ -762,9 +762,6 @@ impl<P: NewtonProblem> Ipopt<P> {
 impl<P: ConstrainedProblem> Ipopt<P> {
     /// Create a new constrained non-linear problem.
     pub fn new(nlp: P) -> Result<Self, CreateError> {
-        let (x_l, x_u) = nlp.bounds();
-        let (g_l, g_u) = nlp.constraint_bounds();
-
         let num_constraints = nlp.num_constraints();
         let num_vars = nlp.num_variables();
         let num_hess_nnz =  nlp.num_hessian_non_zeros();
@@ -778,12 +775,6 @@ impl<P: ConstrainedProblem> Ipopt<P> {
         }
         if x.len() != num_vars {
             return Err(CreateError::InvalidInitialPoint);
-        }
-        if x_l.len() != num_vars || x_u.len() != num_vars {
-            return Err(CreateError::InvalidBounds);
-        }
-        if g_l.len() != num_constraints || g_u.len() != num_constraints {
-            return Err(CreateError::InvalidConstraintBounds);
         }
         if (num_constraints > 0 && num_constraint_jac_nnz == 0) ||
             (num_constraints == 0 && num_constraint_jac_nnz > 0) {
@@ -803,18 +794,15 @@ impl<P: ConstrainedProblem> Ipopt<P> {
             ffi::CreateIpoptProblem(
                 &mut nlp_internal as *mut ffi::IpoptProblem,
                 num_vars as Index,
-                x_l.as_ptr(),
-                x_u.as_ptr(),
                 x.as_ptr(),
                 mult_x_l.as_ptr(),
                 mult_x_u.as_ptr(),
                 num_constraints as Index,
-                g_l.as_ptr(),
-                g_u.as_ptr(),
                 mult_g.as_ptr(),
                 num_constraint_jac_nnz as Index,
                 num_hess_nnz as Index,
                 nlp.indexing_style() as Index,
+                Some(Self::bounds),
                 Some(Self::eval_f),
                 Some(Self::eval_g),
                 Some(Self::eval_grad_f),
@@ -838,6 +826,21 @@ impl<P: ConstrainedProblem> Ipopt<P> {
     /**
      * Ipopt C API
      */
+
+    /// Specify lower and upper bounds for variables and the constraint function.
+    unsafe extern "C" fn bounds(
+        n: Index,
+        x_l: *mut Number,
+        x_u: *mut Number,
+        m: Index,
+        g_l: *mut Number,
+        g_u: *mut Number,
+        user_data: ffi::UserDataPtr) -> Bool
+    {
+        let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
+        (nlp.bounds(slice::from_raw_parts_mut(x_l, n as usize), slice::from_raw_parts_mut(x_u, n as usize)) && 
+        nlp.constraint_bounds(slice::from_raw_parts_mut(g_l, m as usize), slice::from_raw_parts_mut(g_u, m as usize))) as Bool
+    }
 
     /// Evaluate the constraint function.
     unsafe extern "C" fn eval_g(
@@ -912,6 +915,7 @@ impl<P: ConstrainedProblem> Ipopt<P> {
     }
 }
 
+/// Free the memory allocated on the C side.
 impl<P: BasicProblem> Drop for Ipopt<P> {
     fn drop(&mut self) {
         unsafe { ffi::FreeIpoptProblem(self.nlp_internal); }
@@ -1088,11 +1092,6 @@ pub enum CreateError {
     NoOptimizationVariablesSpecified,
     /// Initial guess size doesn't match number of variables specified.
     InvalidInitialPoint,
-    /// Number of variables doesn't correspond to the size of variable bounds given.
-    InvalidBounds,
-    /// Number of constraints specified doesn't match the size of the lower and upper constraint
-    /// bounds vectors.
-    InvalidConstraintBounds,
     /// The number of Jacobian elements is non-zero, yet no constraints were provided or
     /// the number of constraints is non-zero, yet no Jacobian elements were provided.
     InvalidConstraintJacobian,
@@ -1105,9 +1104,6 @@ impl From<CreateProblemStatus> for CreateError {
         match s {
             CreateProblemStatus::MissingInitialGuess => CreateError::InvalidInitialPoint,
             CreateProblemStatus::TooFewOptimizationVariables => CreateError::NoOptimizationVariablesSpecified,
-            CreateProblemStatus::MissingConstraintLowerBound => CreateError::InvalidConstraintBounds,
-            CreateProblemStatus::MissingConstraintUpperBound => CreateError::InvalidConstraintBounds,
-            CreateProblemStatus::NumConstraintsVsBoundsMismatch => CreateError::InvalidConstraintBounds,
             CreateProblemStatus::HaveJacobianElementsButNoConstraints => CreateError::InvalidConstraintJacobian,
             CreateProblemStatus::HaveConstraintsButNoJacobianElements => CreateError::InvalidConstraintJacobian,
             _ => CreateError::Unknown,
@@ -1127,19 +1123,14 @@ enum CreateProblemStatus {
     TooFewOptimizationVariables,
     /// Number of constraints is a negative value.
     ConstraintSizeIsNegative,
-    /// Constraint lower bound vector is missing.
-    MissingConstraintLowerBound,
-    /// Constraint upper bound vector is missing.
-    MissingConstraintUpperBound,
-    /// Number of constraints specified doesn't match the size of the lower and upper constraint
-    /// bounds vectors.
-    NumConstraintsVsBoundsMismatch,
     /// Number of Jacobian elements is non-zero, yet no constraints were provided.
     HaveJacobianElementsButNoConstraints,
     /// Number of constraints is non-zero, yet no Jacobian elements were provided.
     HaveConstraintsButNoJacobianElements,
     /// Number of hessian elements given is negative.
     InvalidNumHessianElements,
+    /// Missing callback for evaluating variable and constraint bounds.
+    MissingBounds,
     /// Missing callback for evaluating the objective: `eval_f`.
     MissingEvalF,
     /// Missing callback for evaluating the gradient of the objective: `eval_grad_f`.
@@ -1160,12 +1151,10 @@ impl CreateProblemStatus{
             ffi::CreateProblemStatus_MissingInitialGuess                    => RS::MissingInitialGuess,
             ffi::CreateProblemStatus_TooFewOptimizationVariables            => RS::TooFewOptimizationVariables,
             ffi::CreateProblemStatus_ConstraintSizeIsNegative               => RS::ConstraintSizeIsNegative,
-            ffi::CreateProblemStatus_MissingConstraintLowerBound            => RS::MissingConstraintLowerBound,
-            ffi::CreateProblemStatus_MissingConstraintUpperBound            => RS::MissingConstraintUpperBound,
-            ffi::CreateProblemStatus_NumConstraintsVsBoundsMismatch         => RS::NumConstraintsVsBoundsMismatch,
             ffi::CreateProblemStatus_HaveJacobianElementsButNoConstraints   => RS::HaveJacobianElementsButNoConstraints,
             ffi::CreateProblemStatus_HaveConstraintsButNoJacobianElements   => RS::HaveConstraintsButNoJacobianElements,
             ffi::CreateProblemStatus_InvalidNumHessianElements              => RS::InvalidNumHessianElements,
+            ffi::CreateProblemStatus_MissingBounds                          => RS::MissingBounds,
             ffi::CreateProblemStatus_MissingEvalF                           => RS::MissingEvalF,
             ffi::CreateProblemStatus_MissingEvalGradF                       => RS::MissingEvalGradF,
             ffi::CreateProblemStatus_HaveConstraintsButNoEvalGOrEvalJacG    => RS::HaveConstraintsButNoEvalGOrEvalJacG,
@@ -1188,7 +1177,11 @@ mod tests {
 
     impl BasicProblem for NlpUnconstrained {
         fn num_variables(&self) -> usize { self.num_vars }
-        fn bounds(&self) -> (Vec<Number>, Vec<Number>) { (self.lower.clone(), self.upper.clone()) }
+        fn bounds(&self, x_l: &mut [Number], x_u: &mut [Number]) -> bool {
+            x_l.copy_from_slice(&self.lower);
+            x_u.copy_from_slice(&self.upper);
+            true
+        }
         fn initial_point(&self) -> Vec<Number> { self.init_point.clone() }
         fn objective(&mut self, _: &[Number], _: &mut Number) -> bool {
             true
@@ -1215,13 +1208,6 @@ mod tests {
         let nlp1 = NlpUnconstrained { init_point: vec![0.0], ..nlp.clone() };
         assert_eq!(Ipopt::new_unconstrained(nlp1).unwrap_err(), CreateError::InvalidInitialPoint);
 
-        // Invalid bounds
-        let nlp2 = NlpUnconstrained { lower: vec![0.0], ..nlp.clone() };
-        assert_eq!(Ipopt::new_unconstrained(nlp2).unwrap_err(), CreateError::InvalidBounds);
-
-        let nlp3 = NlpUnconstrained { upper: vec![0.0], ..nlp.clone() };
-        assert_eq!(Ipopt::new_unconstrained(nlp3).unwrap_err(), CreateError::InvalidBounds);
-
         // Invalid number of variables
         let nlp4 = NlpUnconstrained { num_vars: 0, ..nlp.clone() };
         assert_eq!(Ipopt::new_unconstrained(nlp4).unwrap_err(), CreateError::NoOptimizationVariablesSpecified);
@@ -1242,7 +1228,11 @@ mod tests {
 
     impl BasicProblem for NlpConstrained {
         fn num_variables(&self) -> usize { self.num_vars }
-        fn bounds(&self) -> (Vec<Number>, Vec<Number>) { (self.lower.clone(), self.upper.clone()) }
+        fn bounds(&self, x_l: &mut [Number], x_u: &mut [Number]) -> bool {
+            x_l.copy_from_slice(&self.lower);
+            x_u.copy_from_slice(&self.upper);
+            true
+        }
         fn initial_point(&self) -> Vec<Number> { self.init_point.clone() }
         fn objective(&mut self, _: &[Number], _: &mut Number) -> bool { true }
         fn objective_grad(&mut self, _: &[Number], _: &mut [Number]) -> bool { true }
@@ -1252,8 +1242,10 @@ mod tests {
         fn num_constraints(&self) -> usize { self.num_constraints }
         fn num_constraint_jac_non_zeros(&self) -> usize { self.num_constraint_jac_nnz }
 
-        fn constraint_bounds(&self) -> (Vec<Number>, Vec<Number>) {
-            (self.constraint_lower.clone(), self.constraint_upper.clone())
+        fn constraint_bounds(&self, g_l: &mut [Number], g_u: &mut [Number]) -> bool {
+            g_l.copy_from_slice(&self.constraint_lower);
+            g_u.copy_from_slice(&self.constraint_upper);
+            true
         }
         fn constraint(&mut self, _: &[Number], _: &mut [Number]) -> bool { true }
         fn constraint_jac_indices(&mut self, _: &mut [Index], _: &mut [Index]) -> bool { true }
@@ -1293,29 +1285,15 @@ mod tests {
         let nlp1 = NlpConstrained { init_point: vec![0.0], ..nlp.clone() };
         assert_eq!(Ipopt::new(nlp1).unwrap_err(), CreateError::InvalidInitialPoint);
 
-        // Invalid bounds
-        let nlp2 = NlpConstrained { lower: vec![0.0], ..nlp.clone() };
-        assert_eq!(Ipopt::new(nlp2).unwrap_err(), CreateError::InvalidBounds);
-
-        let nlp3 = NlpConstrained { upper: vec![0.0], ..nlp.clone() };
-        assert_eq!(Ipopt::new(nlp3).unwrap_err(), CreateError::InvalidBounds);
-
         // Invalid number of variables
-        let nlp4 = NlpConstrained { num_vars: 0, ..nlp.clone() };
-        assert_eq!(Ipopt::new(nlp4).unwrap_err(), CreateError::NoOptimizationVariablesSpecified);
-
-        // Invalid constraint bounds
-        let nlp5 = NlpConstrained { constraint_lower: vec![0.0], ..nlp.clone() };
-        assert_eq!(Ipopt::new(nlp5).unwrap_err(), CreateError::InvalidConstraintBounds);
-
-        let nlp6 = NlpConstrained { constraint_upper: vec![0.0], ..nlp.clone() };
-        assert_eq!(Ipopt::new(nlp6).unwrap_err(), CreateError::InvalidConstraintBounds);
+        let nlp2 = NlpConstrained { num_vars: 0, ..nlp.clone() };
+        assert_eq!(Ipopt::new(nlp2).unwrap_err(), CreateError::NoOptimizationVariablesSpecified);
 
         // Invalid constraint jacobian
-        let nlp7 = NlpConstrained { num_constraint_jac_nnz: 0, ..nlp.clone() };
-        assert_eq!(Ipopt::new(nlp7).unwrap_err(), CreateError::InvalidConstraintJacobian);
+        let nlp3 = NlpConstrained { num_constraint_jac_nnz: 0, ..nlp.clone() };
+        assert_eq!(Ipopt::new(nlp3).unwrap_err(), CreateError::InvalidConstraintJacobian);
 
-        let nlp8 = NlpConstrained { num_constraints: 0, constraint_lower: vec![], constraint_upper: vec![], ..nlp.clone() };
-        assert_eq!(Ipopt::new(nlp8).unwrap_err(), CreateError::InvalidConstraintJacobian);
+        let nlp4 = NlpConstrained { num_constraints: 0, constraint_lower: vec![], constraint_upper: vec![], ..nlp.clone() };
+        assert_eq!(Ipopt::new(nlp4).unwrap_err(), CreateError::InvalidConstraintJacobian);
     }
 }

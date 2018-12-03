@@ -41,7 +41,11 @@ impl NLP {
 
 impl BasicProblem for NLP {
     fn num_variables(&self) -> usize { 4 }
-    fn bounds(&self) -> (Vec<Number>, Vec<Number>) { (vec![1.0; 4], vec![5.0; 4]) }
+    fn bounds(&self, x_l: &mut [Number], x_u: &mut [Number]) -> bool {
+        x_l.swap_with_slice(vec![1.0; 4].as_mut_slice());
+        x_u.swap_with_slice(vec![5.0; 4].as_mut_slice());
+        true
+    }
     fn initial_point(&self) -> Vec<Number> { vec![1.0, 5.0, 5.0, 1.0] }
     fn objective(&mut self, x: &[Number], obj: &mut Number) -> bool {
         *obj = x[0] * x[3] * (x[0] + x[1] + x[2]) + x[2];
@@ -60,8 +64,10 @@ impl ConstrainedProblem for NLP {
     fn num_constraints(&self) -> usize { 2 }
     fn num_constraint_jac_non_zeros(&self) -> usize { 8 }
 
-    fn constraint_bounds(&self) -> (Vec<Number>, Vec<Number>) {
-        (vec![25.0, 40.0], vec![2.0e19, 40.0])
+    fn constraint_bounds(&self, g_l: &mut [Number], g_u: &mut [Number]) -> bool {
+        g_l.swap_with_slice(vec![25.0, 40.0].as_mut_slice());
+        g_u.swap_with_slice(vec![2.0e19, 40.0].as_mut_slice());
+        true
     }
     fn constraint(&mut self, x: &[Number], g: &mut [Number]) -> bool {
         g[0] = x[0] * x[1] * x[2] * x[3] + self.g_offset[0];
