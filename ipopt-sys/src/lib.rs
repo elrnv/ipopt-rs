@@ -27,36 +27,36 @@ mod tests {
     struct UserData {
         g_offset: [Number; 2],
     }
-	
+    
     /// Test Ipopt raw bindings. This will also serve as an example of the raw C API.
     #[test]
     fn hs071_test() {
-		// rough comparator
-		let approx_eq = |a: f64, b: f64| assert!((a-b).abs() < 1e-5, format!("{} vs. {}", a, b));
+        // rough comparator
+        let approx_eq = |a: f64, b: f64| assert!((a-b).abs() < 1e-5, format!("{} vs. {}", a, b));
 
-		/* set the number of variables and allocate space for the bounds */
-		let n = 4;  // number of variabes
-		let mut x_L = Vec::with_capacity(n); // lower bounds on x
-		let mut x_U = Vec::with_capacity(n); // upper bounds on x
-		/* set the values for the variable bounds */
+        /* set the number of variables and allocate space for the bounds */
+        let n = 4;  // number of variabes
+        let mut x_L = Vec::with_capacity(n); // lower bounds on x
+        let mut x_U = Vec::with_capacity(n); // upper bounds on x
+        /* set the values for the variable bounds */
         x_L.resize(n, 1.0);
         x_U.resize(n, 5.0);
 
-		/* set the number of constraints and allocate space for the bounds */
-		let m = 2usize; // number of constraints
-		/* set the values of the constraint bounds */
-		let mut g_L = vec![25.0, 40.0]; // lower bounds on g
-		let mut g_U = vec![2.0e19, 40.0]; // upper bounds on g
+        /* set the number of constraints and allocate space for the bounds */
+        let m = 2usize; // number of constraints
+        /* set the values of the constraint bounds */
+        let mut g_L = vec![25.0, 40.0]; // lower bounds on g
+        let mut g_U = vec![2.0e19, 40.0]; // upper bounds on g
 
-		/* initialize values for the initial point */
-		let mut x = vec![1.0, 5.0, 5.0, 1.0];
+        /* initialize values for the initial point */
+        let mut x = vec![1.0, 5.0, 5.0, 1.0];
 
-		/* allocate space to store the bound multipliers at the solution */
+        /* allocate space to store the bound multipliers at the solution */
         let mut mult_g = Vec::with_capacity(m);
         mult_g.resize(m, 0.0);
-		let mut mult_x_L = Vec::with_capacity(n);
+        let mut mult_x_L = Vec::with_capacity(n);
         mult_x_L.resize(n, 0.0);
-		let mut mult_x_U = Vec::with_capacity(n);
+        let mut mult_x_U = Vec::with_capacity(n);
         mult_x_U.resize(n, 0.0);
 
         let mut nlp: IpoptProblem = ::std::ptr::null_mut();
@@ -66,18 +66,18 @@ mod tests {
             CreateIpoptProblem(
                 &mut nlp as *mut IpoptProblem,
                 n as Index,
-			   	x_L.as_mut_ptr(),
-			   	x_U.as_mut_ptr(),
-				x.as_mut_ptr(),         
-				mult_x_L.as_mut_ptr(),  // Initial values for the multipliers for
-									    // the lower variable bounds. (if warm start)
-				mult_x_U.as_mut_ptr(),  // Initial values for the multipliers for
-										// the upper variable bounds. (if warm start)
+                x_L.as_mut_ptr(),
+                x_U.as_mut_ptr(),
+                x.as_mut_ptr(),         
+                mult_x_L.as_mut_ptr(),  // Initial values for the multipliers for
+                                        // the lower variable bounds. (if warm start)
+                mult_x_U.as_mut_ptr(),  // Initial values for the multipliers for
+                                        // the upper variable bounds. (if warm start)
                 m as Index,
-			   	g_L.as_mut_ptr(),
-			   	g_U.as_mut_ptr(),
-				mult_g.as_mut_ptr(),    // Initial values for constraint multipliers.
-			   	8, 10, 0, 
+                g_L.as_mut_ptr(),
+                g_U.as_mut_ptr(),
+                mult_g.as_mut_ptr(),    // Initial values for constraint multipliers.
+                8, 10, 0, 
                 Some(eval_f),
                 Some(eval_g),
                 Some(eval_grad_f),
@@ -109,97 +109,97 @@ mod tests {
         let mut user_data = UserData { g_offset: [0.0, 0.0] };
         let udata_ptr = (&mut user_data) as *mut UserData;
 
-		/* solve the problem */
-		let sol = unsafe {
+        /* solve the problem */
+        let sol = unsafe {
             IpoptSolve(nlp,
-					   udata_ptr as UserDataPtr, // Pointer to user data. This will be passed unmodified
-					   							 // to the callback functions.
-					   ) // Problem that is to be optimized.
+                       udata_ptr as UserDataPtr, // Pointer to user data. This will be passed unmodified
+                                                 // to the callback functions.
+                       ) // Problem that is to be optimized.
         };
 
         assert_eq!(sol.status, ApplicationReturnStatus_User_Requested_Stop);
 
-		let mut g = Vec::new();
-		g.resize(m, 0.0);
+        let mut g = Vec::new();
+        g.resize(m, 0.0);
 
-		// Write solutions back to our managed Vecs
-		x.copy_from_slice(unsafe { slice::from_raw_parts(sol.data.x, n) });
-		g.copy_from_slice(unsafe { slice::from_raw_parts(sol.g, m) });
-		mult_g.copy_from_slice(unsafe { slice::from_raw_parts(sol.data.mult_g, m) });
-		mult_x_L.copy_from_slice(unsafe { slice::from_raw_parts(sol.data.mult_x_L, n) });
-		mult_x_U.copy_from_slice(unsafe { slice::from_raw_parts(sol.data.mult_x_U, n) });
+        // Write solutions back to our managed Vecs
+        x.copy_from_slice(unsafe { slice::from_raw_parts(sol.data.x, n) });
+        g.copy_from_slice(unsafe { slice::from_raw_parts(sol.g, m) });
+        mult_g.copy_from_slice(unsafe { slice::from_raw_parts(sol.data.mult_g, m) });
+        mult_x_L.copy_from_slice(unsafe { slice::from_raw_parts(sol.data.mult_x_L, n) });
+        mult_x_U.copy_from_slice(unsafe { slice::from_raw_parts(sol.data.mult_x_U, n) });
 
-		approx_eq(x[0], 1.000000e+00);
-		approx_eq(x[1], 4.743000e+00);
-		approx_eq(x[2], 3.821150e+00);
-		approx_eq(x[3], 1.379408e+00);
+        approx_eq(x[0], 1.000000e+00);
+        approx_eq(x[1], 4.743000e+00);
+        approx_eq(x[2], 3.821150e+00);
+        approx_eq(x[3], 1.379408e+00);
 
-		approx_eq(mult_g[0], -5.522936e-01);
-		approx_eq(mult_g[1], 1.614685e-01);
+        approx_eq(mult_g[0], -5.522936e-01);
+        approx_eq(mult_g[1], 1.614685e-01);
 
-		approx_eq(mult_x_L[0], 1.087872e+00);
-		approx_eq(mult_x_L[1], 4.635819e-09);
-		approx_eq(mult_x_L[2], 9.087447e-09);
-		approx_eq(mult_x_L[3], 8.555955e-09);
-		approx_eq(mult_x_U[0], 4.470027e-09);
-		approx_eq(mult_x_U[1], 4.075231e-07);
-		approx_eq(mult_x_U[2], 1.189791e-08);
-		approx_eq(mult_x_U[3], 6.398749e-09);
+        approx_eq(mult_x_L[0], 1.087872e+00);
+        approx_eq(mult_x_L[1], 4.635819e-09);
+        approx_eq(mult_x_L[2], 9.087447e-09);
+        approx_eq(mult_x_L[3], 8.555955e-09);
+        approx_eq(mult_x_U[0], 4.470027e-09);
+        approx_eq(mult_x_U[1], 4.075231e-07);
+        approx_eq(mult_x_U[2], 1.189791e-08);
+        approx_eq(mult_x_U[3], 6.398749e-09);
 
-		approx_eq(sol.obj_val, 1.701402e+01);
+        approx_eq(sol.obj_val, 1.701402e+01);
 
-		// Now we are going to solve this problem again, but with slightly modified
-		// constraints.  We change the constraint offset of the first constraint a bit,
-		// and resolve the problem using the warm start option.
-		
-		user_data.g_offset[0] = 0.2;
+        // Now we are going to solve this problem again, but with slightly modified
+        // constraints.  We change the constraint offset of the first constraint a bit,
+        // and resolve the problem using the warm start option.
+        
+        user_data.g_offset[0] = 0.2;
 
-		let mut warm_start_str = CString::new("warm_start_init_point").unwrap();
-		let mut yes_str = CString::new("yes").unwrap();
-		let mut bound_push_str = CString::new("bound_push").unwrap();
-		let mut bound_frac_str = CString::new("bound_frac").unwrap();
+        let mut warm_start_str = CString::new("warm_start_init_point").unwrap();
+        let mut yes_str = CString::new("yes").unwrap();
+        let mut bound_push_str = CString::new("bound_push").unwrap();
+        let mut bound_frac_str = CString::new("bound_frac").unwrap();
 
-		unsafe {
-			AddIpoptStrOption(nlp,
-							  (&mut warm_start_str).as_ptr() as *mut i8,
-							  (&mut yes_str).as_ptr() as *mut i8);
-			AddIpoptNumOption(nlp, (&mut bound_push_str).as_ptr() as *mut i8, 1e-5);
-			AddIpoptNumOption(nlp, (&mut bound_frac_str).as_ptr() as *mut i8, 1e-5);
-			SetIntermediateCallback(nlp, None);
-		}
+        unsafe {
+            AddIpoptStrOption(nlp,
+                              (&mut warm_start_str).as_ptr() as *mut i8,
+                              (&mut yes_str).as_ptr() as *mut i8);
+            AddIpoptNumOption(nlp, (&mut bound_push_str).as_ptr() as *mut i8, 1e-5);
+            AddIpoptNumOption(nlp, (&mut bound_frac_str).as_ptr() as *mut i8, 1e-5);
+            SetIntermediateCallback(nlp, None);
+        }
 
-		let sol = unsafe { IpoptSolve( nlp, udata_ptr as UserDataPtr ) };
+        let sol = unsafe { IpoptSolve( nlp, udata_ptr as UserDataPtr ) };
 
-		// Write solutions back to our managed Vecs
-		x.copy_from_slice(unsafe { slice::from_raw_parts(sol.data.x, n) });
-		g.copy_from_slice(unsafe { slice::from_raw_parts(sol.g, m) });
-		mult_g.copy_from_slice(unsafe { slice::from_raw_parts(sol.data.mult_g, m) });
-		mult_x_L.copy_from_slice(unsafe { slice::from_raw_parts(sol.data.mult_x_L, n) });
-		mult_x_U.copy_from_slice(unsafe { slice::from_raw_parts(sol.data.mult_x_U, n) });
+        // Write solutions back to our managed Vecs
+        x.copy_from_slice(unsafe { slice::from_raw_parts(sol.data.x, n) });
+        g.copy_from_slice(unsafe { slice::from_raw_parts(sol.g, m) });
+        mult_g.copy_from_slice(unsafe { slice::from_raw_parts(sol.data.mult_g, m) });
+        mult_x_L.copy_from_slice(unsafe { slice::from_raw_parts(sol.data.mult_x_L, n) });
+        mult_x_U.copy_from_slice(unsafe { slice::from_raw_parts(sol.data.mult_x_U, n) });
 
-		assert_eq!(sol.status, ApplicationReturnStatus_Solve_Succeeded);
+        assert_eq!(sol.status, ApplicationReturnStatus_Solve_Succeeded);
 
-		approx_eq(x[0], 1.000000e+00);
-		approx_eq(x[1], 4.749269e+00);
-		approx_eq(x[2], 3.817510e+00);
-		approx_eq(x[3], 1.367870e+00);
+        approx_eq(x[0], 1.000000e+00);
+        approx_eq(x[1], 4.749269e+00);
+        approx_eq(x[2], 3.817510e+00);
+        approx_eq(x[3], 1.367870e+00);
 
-		approx_eq(mult_g[0], -5.517016e-01);
-		approx_eq(mult_g[1], 1.592915e-01);
+        approx_eq(mult_g[0], -5.517016e-01);
+        approx_eq(mult_g[1], 1.592915e-01);
 
-		approx_eq(mult_x_L[0], 1.090362e+00);
-		approx_eq(mult_x_L[1], 2.664877e-12);
-		approx_eq(mult_x_L[2], 3.556758e-12);
-		approx_eq(mult_x_L[3], 2.693832e-11);
-		approx_eq(mult_x_U[0], 2.498100e-12);
-		approx_eq(mult_x_U[1], 4.074104e-11);
-		approx_eq(mult_x_U[2], 8.423997e-12);
-		approx_eq(mult_x_U[3], 2.755724e-12);
+        approx_eq(mult_x_L[0], 1.090362e+00);
+        approx_eq(mult_x_L[1], 2.664877e-12);
+        approx_eq(mult_x_L[2], 3.556758e-12);
+        approx_eq(mult_x_L[3], 2.693832e-11);
+        approx_eq(mult_x_U[0], 2.498100e-12);
+        approx_eq(mult_x_U[1], 4.074104e-11);
+        approx_eq(mult_x_U[2], 8.423997e-12);
+        approx_eq(mult_x_U[3], 2.755724e-12);
 
-		approx_eq(sol.obj_val, 1.690362e+01);
+        approx_eq(sol.obj_val, 1.690362e+01);
 
-		/* free allocated memory */
-		unsafe { FreeIpoptProblem(nlp); }
+        /* free allocated memory */
+        unsafe { FreeIpoptProblem(nlp); }
     }
 
     /* Function Implementations */
