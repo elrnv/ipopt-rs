@@ -38,11 +38,11 @@ impl BasicProblem for NLP {
     fn initial_point(&self) -> Vec<Number> {
         vec![1.0, 5.0, 5.0, 1.0]
     }
-    fn objective(&mut self, x: &[Number], obj: &mut Number) -> bool {
+    fn objective(&self, x: &[Number], obj: &mut Number) -> bool {
         *obj = x[0] * x[3] * (x[0] + x[1] + x[2]) + x[2];
         true
     }
-    fn objective_grad(&mut self, x: &[Number], grad_f: &mut [Number]) -> bool {
+    fn objective_grad(&self, x: &[Number], grad_f: &mut [Number]) -> bool {
         grad_f[0] = x[0] * x[3] + x[3] * (x[0] + x[1] + x[2]);
         grad_f[1] = x[0] * x[3];
         grad_f[2] = x[0] * x[3] + 1.0;
@@ -64,12 +64,12 @@ impl ConstrainedProblem for NLP {
         g_u.swap_with_slice(vec![2.0e19, 40.0].as_mut_slice());
         true
     }
-    fn constraint(&mut self, x: &[Number], g: &mut [Number]) -> bool {
+    fn constraint(&self, x: &[Number], g: &mut [Number]) -> bool {
         g[0] = x[0] * x[1] * x[2] * x[3] + self.g_offset[0];
         g[1] = x[0] * x[0] + x[1] * x[1] + x[2] * x[2] + x[3] * x[3] + self.g_offset[1];
         true
     }
-    fn constraint_jac_indices(&mut self, irow: &mut [Index], jcol: &mut [Index]) -> bool {
+    fn constraint_jac_indices(&self, irow: &mut [Index], jcol: &mut [Index]) -> bool {
         irow[0] = 0;
         jcol[0] = 0;
         irow[1] = 0;
@@ -88,7 +88,7 @@ impl ConstrainedProblem for NLP {
         jcol[7] = 3;
         true
     }
-    fn constraint_jac_values(&mut self, x: &[Number], vals: &mut [Number]) -> bool {
+    fn constraint_jac_values(&self, x: &[Number], vals: &mut [Number]) -> bool {
         vals[0] = x[1] * x[2] * x[3]; /* 0,0 */
         vals[1] = x[0] * x[2] * x[3]; /* 0,1 */
         vals[2] = x[0] * x[1] * x[3]; /* 0,2 */
@@ -105,7 +105,7 @@ impl ConstrainedProblem for NLP {
     fn num_hessian_non_zeros(&self) -> usize {
         10
     }
-    fn hessian_indices(&mut self, irow: &mut [Index], jcol: &mut [Index]) -> bool {
+    fn hessian_indices(&self, irow: &mut [Index], jcol: &mut [Index]) -> bool {
         let mut idx = 0;
         for row in 0..4 {
             for col in 0..row + 1 {
@@ -117,7 +117,7 @@ impl ConstrainedProblem for NLP {
         true
     }
     fn hessian_values(
-        &mut self,
+        &self,
         x: &[Number],
         obj_factor: Number,
         lambda: &[Number],

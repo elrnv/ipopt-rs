@@ -77,13 +77,13 @@
  *     }
  *
  *     // The objective to be minimized.
- *     fn objective(&mut self, x: &[Number], obj: &mut Number) -> bool {
+ *     fn objective(&self, x: &[Number], obj: &mut Number) -> bool {
  *         *obj = (x[0] - 1.0)*(x[0] - 1.0) + (x[1] - 1.0)*(x[1] - 1.0);
  *         true
  *     }
  *
  *     // Objective gradient is used to find a new search direction to find the critical point.
- *     fn objective_grad(&mut self, x: &[Number], grad_f: &mut [Number]) -> bool {
+ *     fn objective_grad(&self, x: &[Number], grad_f: &mut [Number]) -> bool {
  *         grad_f[0] = 2.0*(x[0] - 1.0);
  *         grad_f[1] = 2.0*(x[1] - 1.0);
  *         true
@@ -151,10 +151,10 @@ pub trait BasicProblem {
 
     /// Objective function. This is the function being minimized.
     /// This function is internally called by Ipopt callback `eval_f`.
-    fn objective(&mut self, x: &[Number], obj: &mut Number) -> bool;
+    fn objective(&self, x: &[Number], obj: &mut Number) -> bool;
     /// Gradient of the objective function.
     /// This function is internally called by Ipopt callback `eval_grad_f`.
-    fn objective_grad(&mut self, x: &[Number], grad_f: &mut [Number]) -> bool;
+    fn objective_grad(&self, x: &[Number], grad_f: &mut [Number]) -> bool;
 }
 
 /// An extension to the `BasicProblem` trait that enables full Newton iterations in
@@ -173,12 +173,12 @@ pub trait NewtonProblem: BasicProblem {
     /// `ConstrainedProblem`), ensure that you provide coordinates for non-zeros of the
     /// constraint hessian as well.
     /// This function is internally called by Ipopt callback `eval_h`.
-    fn hessian_indices(&mut self, rows: &mut [Index], cols: &mut [Index]) -> bool;
+    fn hessian_indices(&self, rows: &mut [Index], cols: &mut [Index]) -> bool;
     /// Objective Hessian values. Each value must correspond to the `row` and `column` as
     /// specified in `hessian_indices`.
     /// This function is internally called by Ipopt callback `eval_h` and each value is
     /// premultiplied by `Ipopt`'s `obj_factor` as necessary.
-    fn hessian_values(&mut self, x: &[Number], vals: &mut [Number]) -> bool;
+    fn hessian_values(&self, x: &[Number], vals: &mut [Number]) -> bool;
 }
 
 /// Extends the `BasicProblem` trait to enable equality and inequality constraints.
@@ -198,18 +198,18 @@ pub trait ConstrainedProblem: BasicProblem {
     /// Constraint function. This gives the value of each constraint.
     /// The output slice `g` is guaranteed to be the same size as `num_constraints`.
     /// This function is internally called by Ipopt callback `eval_g`.
-    fn constraint(&mut self, x: &[Number], g: &mut [Number]) -> bool;
+    fn constraint(&self, x: &[Number], g: &mut [Number]) -> bool;
     /// Specify lower and upper bounds, `g_l` and `g_u` respectively, on the constraint function.
     /// Both slices will have the same size as what `num_constraints` returns.
     fn constraint_bounds(&self, g_l: &mut [Number], g_u: &mut [Number]) -> bool;
     /// Constraint Jacobian indices. These are the row and column indices of the
     /// non-zeros in the sparse representation of the matrix.
     /// This function is internally called by Ipopt callback `eval_jac_g`.
-    fn constraint_jac_indices(&mut self, rows: &mut [Index], cols: &mut [Index]) -> bool;
+    fn constraint_jac_indices(&self, rows: &mut [Index], cols: &mut [Index]) -> bool;
     /// Constraint Jacobian values. Each value must correspond to the `row` and
     /// `column` as specified in `constraint_jac_indices`.
     /// This function is internally called by Ipopt callback `eval_jac_g`.
-    fn constraint_jac_values(&mut self, x: &[Number], vals: &mut [Number]) -> bool;
+    fn constraint_jac_values(&self, x: &[Number], vals: &mut [Number]) -> bool;
     /// Number of non-zeros in the Hessian matrix. This includes the constraint hessian.
     fn num_hessian_non_zeros(&self) -> usize;
     /// Hessian indices. These are the row and column indices of the non-zeros
@@ -218,7 +218,7 @@ pub trait ConstrainedProblem: BasicProblem {
     /// Ensure that you provide coordinates for non-zeros of the
     /// objective and constraint hessians.
     /// This function is internally called by Ipopt callback `eval_h`.
-    fn hessian_indices(&mut self, rows: &mut [Index], cols: &mut [Index]) -> bool;
+    fn hessian_indices(&self, rows: &mut [Index], cols: &mut [Index]) -> bool;
     /// Hessian values. Each value must correspond to the `row` and `column` as
     /// specified in `hessian_indices`.
     /// Write the objective hessian values multiplied by `obj_factor` and constraint
@@ -226,7 +226,7 @@ pub trait ConstrainedProblem: BasicProblem {
     /// multiplier).
     /// This function is internally called by Ipopt callback `eval_h`.
     fn hessian_values(
-        &mut self,
+        &self,
         x: &[Number],
         obj_factor: Number,
         lambda: &[Number],
@@ -1321,10 +1321,10 @@ mod tests {
         fn initial_point(&self) -> Vec<Number> {
             self.init_point.clone()
         }
-        fn objective(&mut self, _: &[Number], _: &mut Number) -> bool {
+        fn objective(&self, _: &[Number], _: &mut Number) -> bool {
             true
         }
-        fn objective_grad(&mut self, _: &[Number], _: &mut [Number]) -> bool {
+        fn objective_grad(&self, _: &[Number], _: &mut [Number]) -> bool {
             true
         }
     }
@@ -1388,10 +1388,10 @@ mod tests {
         fn initial_point(&self) -> Vec<Number> {
             self.init_point.clone()
         }
-        fn objective(&mut self, _: &[Number], _: &mut Number) -> bool {
+        fn objective(&self, _: &[Number], _: &mut Number) -> bool {
             true
         }
-        fn objective_grad(&mut self, _: &[Number], _: &mut [Number]) -> bool {
+        fn objective_grad(&self, _: &[Number], _: &mut [Number]) -> bool {
             true
         }
     }
@@ -1409,13 +1409,13 @@ mod tests {
             g_u.copy_from_slice(&self.constraint_upper);
             true
         }
-        fn constraint(&mut self, _: &[Number], _: &mut [Number]) -> bool {
+        fn constraint(&self, _: &[Number], _: &mut [Number]) -> bool {
             true
         }
-        fn constraint_jac_indices(&mut self, _: &mut [Index], _: &mut [Index]) -> bool {
+        fn constraint_jac_indices(&self, _: &mut [Index], _: &mut [Index]) -> bool {
             true
         }
-        fn constraint_jac_values(&mut self, _: &[Number], _: &mut [Number]) -> bool {
+        fn constraint_jac_values(&self, _: &[Number], _: &mut [Number]) -> bool {
             true
         }
 
@@ -1423,16 +1423,10 @@ mod tests {
         fn num_hessian_non_zeros(&self) -> usize {
             self.num_hess_nnz
         }
-        fn hessian_indices(&mut self, _: &mut [Index], _: &mut [Index]) -> bool {
+        fn hessian_indices(&self, _: &mut [Index], _: &mut [Index]) -> bool {
             true
         }
-        fn hessian_values(
-            &mut self,
-            _: &[Number],
-            _: Number,
-            _: &[Number],
-            _: &mut [Number],
-        ) -> bool {
+        fn hessian_values(&self, _: &[Number], _: Number, _: &[Number], _: &mut [Number]) -> bool {
             true
         }
     }
