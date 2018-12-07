@@ -16,7 +16,7 @@
 
 /*!
  * # Ipopt-rs
- * 
+ *
  * This crate provides a safe Rust interface to the [Ipopt](https://projects.coin-or.org/Ipopt)
  * non-linear optimization library. From the Ipopt webpage:
  *
@@ -38,7 +38,7 @@
  * > `x`. The functions `f(x)` and `g(x)` can be nonlinear and nonconvex, but should be
  * > twice continuously differentiable. Note that equality constraints can be
  * > formulated in the above formulation by setting the corresponding components of
- * > `g_L` and `g_U` to the same value. 
+ * > `g_L` and `g_U` to the same value.
  *
  * This crate somewhat simplifies the C-interface exposed by Ipopt. Notably it handles the
  * boilerplate code required to solve simple unconstrained problems.
@@ -51,12 +51,12 @@
  * ```
  * extern crate ipopt;
  * #[macro_use] extern crate approx; // for floating point equality tests
- * 
+ *
  * use ipopt::*;
- * 
+ *
  * struct NLP {
  * }
- * 
+ *
  * impl BasicProblem for NLP {
  *     // There are two independent variables: x and y.
  *     fn num_variables(&self) -> usize {
@@ -89,7 +89,7 @@
  *         true
  *     }
  * }
- * 
+ *
  * fn main() {
  *     let nlp = NLP { };
  *     let mut ipopt = Ipopt::new_unconstrained(nlp).unwrap();
@@ -121,7 +121,7 @@ use std::slice;
 /// Uniform floating point number type.
 pub type Number = f64; // Same as ffi::Number
 /// Index type used to access internal buffers.
-pub type Index = i32;  // Same as ffi::Index
+pub type Index = i32; // Same as ffi::Index
 
 /// The non-linear problem to be solved by Ipopt. This trait specifies all the
 /// information needed to construct the unconstrained optimization problem (although the
@@ -135,7 +135,9 @@ pub type Index = i32;  // Same as ffi::Index
 pub trait BasicProblem {
     /// Specify the indexing style used for arrays in this problem.
     /// (Default is zero-based)
-    fn indexing_style(&self) -> IndexingStyle { IndexingStyle::CStyle }
+    fn indexing_style(&self) -> IndexingStyle {
+        IndexingStyle::CStyle
+    }
     /// Total number of variables of the non-linear problem.
     fn num_variables(&self) -> usize;
 
@@ -160,7 +162,7 @@ pub trait BasicProblem {
 /// [Quasi-Newton Approximation](https://www.coin-or.org/Ipopt/documentation/node31.html)
 /// for second derivatives.
 /// This interface asks for the Hessian matrix in sparse triplet form.
-pub trait NewtonProblem : BasicProblem {
+pub trait NewtonProblem: BasicProblem {
     /// Number of non-zeros in the Hessian matrix. This includes the constraint hessian
     /// if one is provided.
     fn num_hessian_non_zeros(&self) -> usize;
@@ -188,7 +190,7 @@ pub trait NewtonProblem : BasicProblem {
 /// Hessian callbacks.  However, you may still enable L-BFGS explicitly by setting the
 /// "hessian_approximation" Ipopt option to "limited-memory", in which case you should
 /// simply return `false` in `hessian_indices` and `hessian_values`.
-pub trait ConstrainedProblem : BasicProblem {
+pub trait ConstrainedProblem: BasicProblem {
     /// Number of equality and inequality constraints.
     fn num_constraints(&self) -> usize;
     /// Number of non-zeros in the constraint Jacobian.
@@ -223,13 +225,14 @@ pub trait ConstrainedProblem : BasicProblem {
     /// hessian values multipled by the corresponding values in `lambda` (the Lagrange
     /// multiplier).
     /// This function is internally called by Ipopt callback `eval_h`.
-    fn hessian_values(&mut self,
-                      x: &[Number],
-                      obj_factor: Number,
-                      lambda: &[Number],
-                      vals: &mut [Number]) -> bool;
+    fn hessian_values(
+        &mut self,
+        x: &[Number],
+        obj_factor: Number,
+        lambda: &[Number],
+        vals: &mut [Number],
+    ) -> bool;
 }
-
 
 /// Type of option you can specify to Ipopt.
 /// This is used internally for conversion.
@@ -280,8 +283,8 @@ pub struct SolverDataMut<'a, P: 'a> {
 }
 
 /// An interface to access internal solver data including the input problem immutably.
-#[derive(Debug, PartialEq)]
-pub struct SolverDataRef<'a, P: 'a> {
+#[derive(Clone, Debug, PartialEq)]
+pub struct SolverData<'a, P: 'a> {
     /// A mutable reference to the original input problem.
     pub problem: &'a P,
     /// This is the solution after the solve.
@@ -292,6 +295,61 @@ pub struct SolverDataRef<'a, P: 'a> {
     pub upper_bound_multipliers: &'a [Number],
     /// Constraint multipliers, which are available only from contrained problems.
     pub constraint_multipliers: &'a [Number],
+}
+
+/// Enum that indicates in which mode the algorithm is at some point in time.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum AlgorithmMode {
+    /// Ipopt is in regular mode.
+    Regular,
+    /// Ipopt is in restoration phase. See Ipopt documentation for details.
+    RestorationPhase,
+}
+
+/// Pieces of solver data available from Ipopt after each iteration inside the intermediate
+/// callback.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct IntermediateCallbackData {
+    /// Algorithm mode indicates which mode the algorithm is currently in.
+    pub alg_mod: AlgorithmMode,
+    /// The current iteration count. This includes regular iterations and iterations during the
+    /// restoration phase.
+    pub iter_count: Index,
+    /// The unscaled objective value at the current point. During the restoration phase, this value
+    /// remains the unscaled objective value for the original problem.
+    pub obj_value: Number,
+    /// The unscaled constraint violation at the current point. This quantity is the infinity-norm
+    /// (max) of the (unscaled) constraints. During the restoration phase, this value remains
+    /// the constraint violation of the original problem at the current point. The option
+    /// inf_pr_output can be used to switch to the printing of a different quantity.
+    pub inf_pr: Number,
+    /// The scaled dual infeasibility at the current point. This quantity measure the infinity-norm
+    /// (max) of the internal dual infeasibility, Eq. (4a) in the [implementation
+    /// paper](https://www.coin-or.org/Ipopt/documentation/node64.html#WaecBieg06:mp),
+    /// including inequality constraints reformulated using slack variables and problem scaling.
+    /// During the restoration phase, this is the value of the dual infeasibility for the
+    /// restoration phase problem.
+    pub inf_du: Number,
+    /// The value of the barrier parameter $ \mu$.
+    pub mu: Number,
+    /// The infinity norm (max) of the primal step (for the original variables $ x$ and the
+    /// internal slack variables $ s$). During the restoration phase, this value includes the
+    /// values of additional variables, $ p$ and $ n$ (see Eq. (30) in [the implementation
+    /// paper](https://www.coin-or.org/Ipopt/documentation/node64.html#WaecBieg06:mp))
+    pub d_norm: Number,
+    /// The value of the regularization term for the Hessian of the Lagrangian in
+    /// the augmented system ($ \delta_w$ in Eq. (26) and Section 3.1 in [the implementation
+    /// paper](https://www.coin-or.org/Ipopt/documentation/node64.html#WaecBieg06:mp)). A zero
+    /// value indicates that no regularization was done.
+    pub regularization_size: Number,
+    /// The stepsize for the dual variables ( $ \alpha^z_k$ in Eq. (14c) in [the implementation
+    /// paper](https://www.coin-or.org/Ipopt/documentation/node64.html#WaecBieg06:mp)).
+    pub alpha_du: Number,
+    /// The stepsize for the primal variables ($ \alpha_k$ in Eq. (14a) in [the implementation
+    /// paper](https://www.coin-or.org/Ipopt/documentation/node64.html#WaecBieg06:mp)).
+    pub alpha_pr: Number,
+    /// The number of backtracking line search steps (does not include second-order correction steps).
+    pub ls_trials: Index,
 }
 
 /// A data structure to store data returned by the solver.
@@ -312,11 +370,7 @@ pub struct SolveResult<'a, P: 'a> {
 /// information on the state of the optimization. This can be used to print some user-
 /// defined output. It also gives the user a way to terminate the optimization
 /// prematurely. If this method returns false, Ipopt will terminate the optimization.
-pub type IntermediateCallback<P> = 
-    fn(&mut P, Index,Index,
-       Number,Number,Number,
-       Number,Number,Number,
-       Number,Number,Index) -> bool;
+pub type IntermediateCallback<P> = fn(&mut P, IntermediateCallbackData) -> bool;
 
 /// Ipopt non-linear optimization problem solver. This structure is used to store data
 /// needed to solve these problems using first and second order methods.
@@ -390,16 +444,19 @@ impl<P: BasicProblem> Ipopt<P> {
                 Some(Self::eval_g_none),
                 Some(Self::eval_grad_f),
                 Some(Self::eval_jac_g_none),
-                Some(Self::eval_h_none))
+                Some(Self::eval_h_none),
+            )
         });
 
         if CreateProblemStatus::Success != create_error {
             return Err(create_error.into());
         }
 
-        assert!(Self::set_ipopt_option(nlp_internal,
-                                       "hessian_approximation",
-                                       "limited-memory"));
+        assert!(Self::set_ipopt_option(
+            nlp_internal,
+            "hessian_approximation",
+            "limited-memory"
+        ));
         Ok(Ipopt {
             nlp_internal,
             nlp_interface: nlp,
@@ -411,45 +468,49 @@ impl<P: BasicProblem> Ipopt<P> {
 
     /// Helper static function that can be used in the constructor.
     fn set_ipopt_option<'a, O>(nlp: ffi::IpoptProblem, name: &str, option: O) -> bool
-        where O: Into<IpoptOption<'a>>
+    where
+        O: Into<IpoptOption<'a>>,
     {
-        let success = unsafe {
+        (unsafe {
             // Convert the input name string to a `char *` C type
-            let mut name_cstr = CString::new(name).unwrap();
-            let name_cstr = (&mut name_cstr).as_ptr() as *mut i8; // this is `char *`
-            // Match option to one of the three types of options Ipopt can receive.
+            let name_cstr = CString::new(name).unwrap();
+            let name_cstr = (&name_cstr).as_ptr() as *mut i8; // this is `char *`
+                                                              // Match option to one of the three types of options Ipopt can receive.
             match option.into() {
-                IpoptOption::Num(opt) =>
-                    ffi::AddIpoptNumOption(nlp, name_cstr, opt as Number),
+                IpoptOption::Num(opt) => ffi::AddIpoptNumOption(nlp, name_cstr, opt as Number),
                 IpoptOption::Str(opt) => {
                     // Convert option string to `char *`
-                    let mut opt_cstr = CString::new(opt).unwrap();
-                    let opt_cstr = (&mut opt_cstr).as_ptr() as *mut i8;
+                    let opt_cstr = CString::new(opt).unwrap();
+                    let opt_cstr = (&opt_cstr).as_ptr() as *mut i8;
                     ffi::AddIpoptStrOption(nlp, name_cstr, opt_cstr)
-                },
-                IpoptOption::Int(opt) =>
-                    ffi::AddIpoptIntOption(nlp, name_cstr, opt as Int),
+                }
+                IpoptOption::Int(opt) => ffi::AddIpoptIntOption(nlp, name_cstr, opt as Int),
             }
-        } != 0; // converts Ipopt Bool to Rust bool
-        success
+        } != 0) // converts Ipopt Bool to Rust bool
     }
 
     /// Set an Ipopt option.
     pub fn set_option<'a, O>(&mut self, name: &str, option: O) -> Option<&mut Self>
-        where O: Into<IpoptOption<'a>>
+    where
+        O: Into<IpoptOption<'a>>,
     {
         let success = Self::set_ipopt_option(self.nlp_internal, name, option);
-        if success { Some(self) } else { None }
+        if success {
+            Some(self)
+        } else {
+            None
+        }
     }
 
     /// Set intermediate callback.
     pub fn set_intermediate_callback(&mut self, mb_cb: Option<IntermediateCallback<P>>)
-        where P: BasicProblem,
+    where
+        P: BasicProblem,
     {
         self.intermediate_callback = mb_cb;
 
         unsafe {
-            if let Some(_) = mb_cb {
+            if mb_cb.is_some() {
                 ffi::SetIntermediateCallback(self.nlp_internal, Some(Self::intermediate_cb));
             } else {
                 ffi::SetIntermediateCallback(self.nlp_internal, None);
@@ -475,10 +536,18 @@ impl<P: BasicProblem> Ipopt<P> {
         SolveResult {
             solver_data: SolverDataMut {
                 problem,
-                primal_variables: unsafe { slice::from_raw_parts_mut(res.data.x, num_primal_variables) },
-                lower_bound_multipliers: unsafe { slice::from_raw_parts_mut(res.data.mult_x_L, num_primal_variables) },
-                upper_bound_multipliers: unsafe { slice::from_raw_parts_mut(res.data.mult_x_U, num_primal_variables) },
-                constraint_multipliers: unsafe { slice::from_raw_parts_mut(res.data.mult_g, num_dual_variables) },
+                primal_variables: unsafe {
+                    slice::from_raw_parts_mut(res.data.x, num_primal_variables)
+                },
+                lower_bound_multipliers: unsafe {
+                    slice::from_raw_parts_mut(res.data.mult_x_L, num_primal_variables)
+                },
+                upper_bound_multipliers: unsafe {
+                    slice::from_raw_parts_mut(res.data.mult_x_U, num_primal_variables)
+                },
+                constraint_multipliers: unsafe {
+                    slice::from_raw_parts_mut(res.data.mult_g, num_dual_variables)
+                },
             },
             constraint_values: unsafe { slice::from_raw_parts(res.g, num_dual_variables) },
             objective_value: res.obj_val,
@@ -508,15 +577,21 @@ impl<P: BasicProblem> Ipopt<P> {
         SolverDataMut {
             problem,
             primal_variables: unsafe { slice::from_raw_parts_mut(x, num_primal_variables) },
-            lower_bound_multipliers: unsafe { slice::from_raw_parts_mut(mult_x_L, num_primal_variables) },
-            upper_bound_multipliers: unsafe { slice::from_raw_parts_mut(mult_x_U, num_primal_variables) },
-            constraint_multipliers: unsafe { slice::from_raw_parts_mut(mult_g, num_dual_variables) },
+            lower_bound_multipliers: unsafe {
+                slice::from_raw_parts_mut(mult_x_L, num_primal_variables)
+            },
+            upper_bound_multipliers: unsafe {
+                slice::from_raw_parts_mut(mult_x_U, num_primal_variables)
+            },
+            constraint_multipliers: unsafe {
+                slice::from_raw_parts_mut(mult_g, num_dual_variables)
+            },
         }
     }
 
     /// Get data for inspection from the internal solver.
     #[allow(non_snake_case)]
-    pub fn solver_data_ref(&self) -> SolverDataRef<P> {
+    pub fn solver_data(&self) -> SolverData<P> {
         let Ipopt {
             nlp_interface: ref problem,
             nlp_internal,
@@ -532,11 +607,15 @@ impl<P: BasicProblem> Ipopt<P> {
             mult_x_U,
         } = unsafe { ffi::GetSolverData(nlp_internal) };
 
-        SolverDataRef {
+        SolverData {
             problem,
             primal_variables: unsafe { slice::from_raw_parts(x, num_primal_variables) },
-            lower_bound_multipliers: unsafe { slice::from_raw_parts(mult_x_L, num_primal_variables) },
-            upper_bound_multipliers: unsafe { slice::from_raw_parts(mult_x_U, num_primal_variables) },
+            lower_bound_multipliers: unsafe {
+                slice::from_raw_parts(mult_x_L, num_primal_variables)
+            },
+            upper_bound_multipliers: unsafe {
+                slice::from_raw_parts(mult_x_U, num_primal_variables)
+            },
             constraint_multipliers: unsafe { slice::from_raw_parts(mult_g, num_dual_variables) },
         }
     }
@@ -553,11 +632,14 @@ impl<P: BasicProblem> Ipopt<P> {
         m: Index,
         _g_l: *mut Number,
         _g_u: *mut Number,
-        user_data: ffi::UserDataPtr) -> Bool
-    {
+        user_data: ffi::UserDataPtr,
+    ) -> Bool {
         assert_eq!(m, 0);
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
-        nlp.bounds(slice::from_raw_parts_mut(x_l, n as usize), slice::from_raw_parts_mut(x_u, n as usize)) as Bool
+        nlp.bounds(
+            slice::from_raw_parts_mut(x_l, n as usize),
+            slice::from_raw_parts_mut(x_u, n as usize),
+        ) as Bool
     }
 
     /// Evaluate the objective function.
@@ -566,8 +648,8 @@ impl<P: BasicProblem> Ipopt<P> {
         x: *mut Number,
         _new_x: Bool,
         obj_value: *mut Number,
-        user_data: ffi::UserDataPtr) -> Bool
-    {
+        user_data: ffi::UserDataPtr,
+    ) -> Bool {
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
         nlp.objective(slice::from_raw_parts(x, n as usize), &mut *obj_value) as Bool
     }
@@ -578,11 +660,13 @@ impl<P: BasicProblem> Ipopt<P> {
         x: *mut Number,
         _new_x: Bool,
         grad_f: *mut Number,
-        user_data: ffi::UserDataPtr) -> Bool
-    {
+        user_data: ffi::UserDataPtr,
+    ) -> Bool {
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
-        nlp.objective_grad(slice::from_raw_parts(x, n as usize),
-                           slice::from_raw_parts_mut(grad_f, n as usize)) as Bool
+        nlp.objective_grad(
+            slice::from_raw_parts(x, n as usize),
+            slice::from_raw_parts_mut(grad_f, n as usize),
+        ) as Bool
     }
 
     /// Placeholder constraint function with no constraints.
@@ -592,8 +676,8 @@ impl<P: BasicProblem> Ipopt<P> {
         _new_x: Bool,
         _m: Index,
         _g: *mut Number,
-        _user_data: ffi::UserDataPtr) -> Bool
-    {
+        _user_data: ffi::UserDataPtr,
+    ) -> Bool {
         true as Bool
     }
 
@@ -607,8 +691,8 @@ impl<P: BasicProblem> Ipopt<P> {
         _irow: *mut Index,
         _jcol: *mut Index,
         _values: *mut Number,
-        _user_data: ffi::UserDataPtr) -> Bool
-    {
+        _user_data: ffi::UserDataPtr,
+    ) -> Bool {
         true as Bool
     }
 
@@ -625,8 +709,8 @@ impl<P: BasicProblem> Ipopt<P> {
         _irow: *mut Index,
         _jcol: *mut Index,
         _values: *mut Number,
-        _user_data: ffi::UserDataPtr) -> Bool
-    {
+        _user_data: ffi::UserDataPtr,
+    ) -> Bool {
         // From "Quasi-Newton Approximation of Second-Derivatives" in Ipopt docs:
         //  "If you are using the C or Fortran interface, you still need to implement [eval_h],
         //  but [it] should return false or IERR=1, respectively, and don't need to do
@@ -647,15 +731,29 @@ impl<P: BasicProblem> Ipopt<P> {
         alpha_du: Number,
         alpha_pr: Number,
         ls_trials: Index,
-        user_data: ffi::UserDataPtr) -> Bool
-    {
+        user_data: ffi::UserDataPtr,
+    ) -> Bool {
         let ip = &mut (*(user_data as *mut Ipopt<P>));
         if let Some(callback) = ip.intermediate_callback {
             (callback)(
                 &mut ip.nlp_interface,
-                alg_mod, iter_count, obj_value,
-                inf_pr, inf_du, mu, d_norm,
-                regularization_size, alpha_du, alpha_pr, ls_trials) as Bool
+                IntermediateCallbackData {
+                    alg_mod: match alg_mod {
+                        0 => AlgorithmMode::Regular,
+                        _ => AlgorithmMode::RestorationPhase,
+                    },
+                    iter_count,
+                    obj_value,
+                    inf_pr,
+                    inf_du,
+                    mu,
+                    d_norm,
+                    regularization_size,
+                    alpha_du,
+                    alpha_pr,
+                    ls_trials,
+                },
+            ) as Bool
         } else {
             true as Bool
         }
@@ -701,7 +799,8 @@ impl<P: NewtonProblem> Ipopt<P> {
                 Some(Self::eval_g_none),
                 Some(Self::eval_grad_f),
                 Some(Self::eval_jac_g_none),
-                Some(Self::eval_h))
+                Some(Self::eval_h),
+            )
         });
 
         if create_error != CreateProblemStatus::Success {
@@ -734,19 +833,21 @@ impl<P: NewtonProblem> Ipopt<P> {
         irow: *mut Index,
         jcol: *mut Index,
         values: *mut Number,
-        user_data: ffi::UserDataPtr) -> Bool
-    {
+        user_data: ffi::UserDataPtr,
+    ) -> Bool {
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
         if values.is_null() {
             /* return the structure. */
             nlp.hessian_indices(
                 slice::from_raw_parts_mut(irow, nele_hess as usize),
-                slice::from_raw_parts_mut(jcol, nele_hess as usize)) as Bool
+                slice::from_raw_parts_mut(jcol, nele_hess as usize),
+            ) as Bool
         } else {
             /* return the values. */
             let result = nlp.hessian_values(
                 slice::from_raw_parts(x, n as usize),
-                slice::from_raw_parts_mut(values, nele_hess as usize)) as Bool;
+                slice::from_raw_parts_mut(values, nele_hess as usize),
+            ) as Bool;
             // This problem has no constraints so we can multiply each entry by the
             // objective factor.
             let start_idx = nlp.indexing_style() as isize;
@@ -758,14 +859,13 @@ impl<P: NewtonProblem> Ipopt<P> {
     }
 }
 
-
 impl<P: ConstrainedProblem> Ipopt<P> {
     /// Create a new constrained non-linear problem.
     pub fn new(nlp: P) -> Result<Self, CreateError> {
         let num_constraints = nlp.num_constraints();
         let num_vars = nlp.num_variables();
-        let num_hess_nnz =  nlp.num_hessian_non_zeros();
-        let num_constraint_jac_nnz =  nlp.num_constraint_jac_non_zeros();
+        let num_hess_nnz = nlp.num_hessian_non_zeros();
+        let num_constraint_jac_nnz = nlp.num_constraint_jac_non_zeros();
 
         let x = nlp.initial_point();
 
@@ -776,8 +876,9 @@ impl<P: ConstrainedProblem> Ipopt<P> {
         if x.len() != num_vars {
             return Err(CreateError::InvalidInitialPoint);
         }
-        if (num_constraints > 0 && num_constraint_jac_nnz == 0) ||
-            (num_constraints == 0 && num_constraint_jac_nnz > 0) {
+        if (num_constraints > 0 && num_constraint_jac_nnz == 0)
+            || (num_constraints == 0 && num_constraint_jac_nnz > 0)
+        {
             return Err(CreateError::InvalidConstraintJacobian);
         }
 
@@ -807,7 +908,8 @@ impl<P: ConstrainedProblem> Ipopt<P> {
                 Some(Self::eval_g),
                 Some(Self::eval_grad_f),
                 Some(Self::eval_jac_g),
-                Some(Self::eval_full_h))
+                Some(Self::eval_full_h),
+            )
         });
 
         if create_error != CreateProblemStatus::Success {
@@ -835,11 +937,16 @@ impl<P: ConstrainedProblem> Ipopt<P> {
         m: Index,
         g_l: *mut Number,
         g_u: *mut Number,
-        user_data: ffi::UserDataPtr) -> Bool
-    {
+        user_data: ffi::UserDataPtr,
+    ) -> Bool {
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
-        (nlp.bounds(slice::from_raw_parts_mut(x_l, n as usize), slice::from_raw_parts_mut(x_u, n as usize)) && 
-        nlp.constraint_bounds(slice::from_raw_parts_mut(g_l, m as usize), slice::from_raw_parts_mut(g_u, m as usize))) as Bool
+        (nlp.bounds(
+            slice::from_raw_parts_mut(x_l, n as usize),
+            slice::from_raw_parts_mut(x_u, n as usize),
+        ) && nlp.constraint_bounds(
+            slice::from_raw_parts_mut(g_l, m as usize),
+            slice::from_raw_parts_mut(g_u, m as usize),
+        )) as Bool
     }
 
     /// Evaluate the constraint function.
@@ -849,11 +956,13 @@ impl<P: ConstrainedProblem> Ipopt<P> {
         _new_x: Bool,
         m: Index,
         g: *mut Number,
-        user_data: ffi::UserDataPtr) -> Bool
-    {
+        user_data: ffi::UserDataPtr,
+    ) -> Bool {
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
-        nlp.constraint(slice::from_raw_parts(x, n as usize),
-                       slice::from_raw_parts_mut(g, m as usize)) as Bool
+        nlp.constraint(
+            slice::from_raw_parts(x, n as usize),
+            slice::from_raw_parts_mut(g, m as usize),
+        ) as Bool
     }
 
     /// Evaluate the constraint Jacobian.
@@ -866,19 +975,21 @@ impl<P: ConstrainedProblem> Ipopt<P> {
         irow: *mut Index,
         jcol: *mut Index,
         values: *mut Number,
-        user_data: ffi::UserDataPtr) -> Bool
-    {
+        user_data: ffi::UserDataPtr,
+    ) -> Bool {
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
         if values.is_null() {
             /* return the structure of the Jacobian */
             nlp.constraint_jac_indices(
                 slice::from_raw_parts_mut(irow, nele_jac as usize),
-                slice::from_raw_parts_mut(jcol, nele_jac as usize)) as Bool
+                slice::from_raw_parts_mut(jcol, nele_jac as usize),
+            ) as Bool
         } else {
             /* return the values of the Jacobian of the constraints */
             nlp.constraint_jac_values(
                 slice::from_raw_parts(x, n as usize),
-                slice::from_raw_parts_mut(values, nele_jac as usize)) as Bool
+                slice::from_raw_parts_mut(values, nele_jac as usize),
+            ) as Bool
         }
     }
 
@@ -896,21 +1007,23 @@ impl<P: ConstrainedProblem> Ipopt<P> {
         irow: *mut Index,
         jcol: *mut Index,
         values: *mut Number,
-        user_data: ffi::UserDataPtr) -> Bool
-    {
+        user_data: ffi::UserDataPtr,
+    ) -> Bool {
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
         if values.is_null() {
             /* return the structure. */
             nlp.hessian_indices(
                 slice::from_raw_parts_mut(irow, nele_hess as usize),
-                slice::from_raw_parts_mut(jcol, nele_hess as usize)) as Bool
+                slice::from_raw_parts_mut(jcol, nele_hess as usize),
+            ) as Bool
         } else {
             /* return the values. */
             nlp.hessian_values(
                 slice::from_raw_parts(x, n as usize),
                 obj_factor,
                 slice::from_raw_parts(lambda, m as usize),
-                slice::from_raw_parts_mut(values, nele_hess as usize)) as Bool
+                slice::from_raw_parts_mut(values, nele_hess as usize),
+            ) as Bool
         }
     }
 }
@@ -918,7 +1031,9 @@ impl<P: ConstrainedProblem> Ipopt<P> {
 /// Free the memory allocated on the C side.
 impl<P: BasicProblem> Drop for Ipopt<P> {
     fn drop(&mut self) {
-        unsafe { ffi::FreeIpoptProblem(self.nlp_internal); }
+        unsafe {
+            ffi::FreeIpoptProblem(self.nlp_internal);
+        }
     }
 }
 
@@ -944,22 +1059,22 @@ pub enum SolveStatus {
     /// it was able to obtain a point satisfying the "acceptable" tolerance level as specified by
     /// the [`acceptable_*`
     /// ](https://www.coin-or.org/Ipopt/documentation/node42.html#opt:acceptable_tol) options. This
-    /// may happen if the desired tolerances are too small for the current problem. 
+    /// may happen if the desired tolerances are too small for the current problem.
     SolvedToAcceptableLevel,
     /// Console Message: `EXIT: Feasible point for square problem found.`
     ///
     /// This message is printed if the problem is "square" (i.e., it has as many equality
-    /// constraints as free variables) and IPOPT found a feasible point. 
+    /// constraints as free variables) and IPOPT found a feasible point.
     FeasiblePointFound,
     /// Console Message: `EXIT: Converged to a point of local infeasibility. Problem may be
     /// infeasible.`
-    /// 
+    ///
     /// The restoration phase converged to a point that is a minimizer for the constraint violation
     /// (in the l1-norm), but is not feasible for the original problem. This indicates that
     /// the problem may be infeasible (or at least that the algorithm is stuck at a locally
     /// infeasible point). The returned point (the minimizer of the constraint violation) might
     /// help you to find which constraint is causing the problem. If you believe that the NLP is
-    /// feasible, it might help to start the optimization from a different point. 
+    /// feasible, it might help to start the optimization from a different point.
     InfeasibleProblemDetected,
     /// Console Message: `EXIT: Search Direction is becoming Too Small.`
     ///
@@ -968,7 +1083,7 @@ pub enum SolveStatus {
     /// possible given the current scaling.
     SearchDirectionBecomesTooSmall,
     /// Console Message: `EXIT: Iterates diverging; problem might be unbounded.`
-    /// 
+    ///
     /// This message is printed if the max-norm of the iterates becomes larger than the value of
     /// the option [`diverging_iterates_tol`
     /// ](https://www.coin-or.org/Ipopt/documentation/node42.html#opt:diverging_iterates_tol).
@@ -995,7 +1110,7 @@ pub enum SolveStatus {
     /// This indicates that the restoration phase failed to find a feasible point that was
     /// acceptable to the filter line search for the original problem. This could happen if the
     /// problem is highly degenerate, does not satisfy the constraint qualification, or if your NLP
-    /// code provides incorrect derivative information. 
+    /// code provides incorrect derivative information.
     RestorationFailed,
     /// Console Output: `EXIT: Error in step computation (regularization becomes too large?)!`
     ///
@@ -1042,7 +1157,7 @@ pub enum SolveStatus {
     /// Console Message: `EXIT: Not enough memory.`
     ///
     /// An error occurred while trying to allocate memory. The problem may be too large for your
-    /// current memory and swap configuration. 
+    /// current memory and swap configuration.
     InsufficientMemory,
     /// Console: `EXIT: INTERNAL ERROR: Unknown SolverReturn value - Notify IPOPT Authors.`
     ///
@@ -1058,26 +1173,33 @@ impl SolveStatus {
     fn new(status: ffi::ApplicationReturnStatus) -> Self {
         use crate::SolveStatus as RS;
         match status {
-            ffi::ApplicationReturnStatus_Solve_Succeeded              => RS::SolveSucceeded,
-            ffi::ApplicationReturnStatus_Solved_To_Acceptable_Level   => RS::SolvedToAcceptableLevel,
-            ffi::ApplicationReturnStatus_Infeasible_Problem_Detected  => RS::InfeasibleProblemDetected,
-            ffi::ApplicationReturnStatus_Search_Direction_Becomes_Too_Small
-                => RS::SearchDirectionBecomesTooSmall,
-            ffi::ApplicationReturnStatus_Diverging_Iterates            => RS::DivergingIterates,
-            ffi::ApplicationReturnStatus_User_Requested_Stop           => RS::UserRequestedStop,
-            ffi::ApplicationReturnStatus_Feasible_Point_Found          => RS::FeasiblePointFound,
-            ffi::ApplicationReturnStatus_Maximum_Iterations_Exceeded   => RS::MaximumIterationsExceeded,
-            ffi::ApplicationReturnStatus_Restoration_Failed            => RS::RestorationFailed,
-            ffi::ApplicationReturnStatus_Error_In_Step_Computation     => RS::ErrorInStepComputation,
-            ffi::ApplicationReturnStatus_Maximum_CpuTime_Exceeded      => RS::MaximumCpuTimeExceeded,
-            ffi::ApplicationReturnStatus_Not_Enough_Degrees_Of_Freedom => RS::NotEnoughDegreesOfFreedom,
-            ffi::ApplicationReturnStatus_Invalid_Problem_Definition    => RS::InvalidProblemDefinition,
-            ffi::ApplicationReturnStatus_Invalid_Option                => RS::InvalidOption,
-            ffi::ApplicationReturnStatus_Invalid_Number_Detected       => RS::InvalidNumberDetected,
-            ffi::ApplicationReturnStatus_Unrecoverable_Exception       => RS::UnrecoverableException,
-            ffi::ApplicationReturnStatus_NonIpopt_Exception_Thrown     => RS::NonIpoptExceptionThrown,
-            ffi::ApplicationReturnStatus_Insufficient_Memory           => RS::InsufficientMemory,
-            ffi::ApplicationReturnStatus_Internal_Error                => RS::InternalError,
+            ffi::ApplicationReturnStatus_Solve_Succeeded => RS::SolveSucceeded,
+            ffi::ApplicationReturnStatus_Solved_To_Acceptable_Level => RS::SolvedToAcceptableLevel,
+            ffi::ApplicationReturnStatus_Infeasible_Problem_Detected => {
+                RS::InfeasibleProblemDetected
+            }
+            ffi::ApplicationReturnStatus_Search_Direction_Becomes_Too_Small => {
+                RS::SearchDirectionBecomesTooSmall
+            }
+            ffi::ApplicationReturnStatus_Diverging_Iterates => RS::DivergingIterates,
+            ffi::ApplicationReturnStatus_User_Requested_Stop => RS::UserRequestedStop,
+            ffi::ApplicationReturnStatus_Feasible_Point_Found => RS::FeasiblePointFound,
+            ffi::ApplicationReturnStatus_Maximum_Iterations_Exceeded => {
+                RS::MaximumIterationsExceeded
+            }
+            ffi::ApplicationReturnStatus_Restoration_Failed => RS::RestorationFailed,
+            ffi::ApplicationReturnStatus_Error_In_Step_Computation => RS::ErrorInStepComputation,
+            ffi::ApplicationReturnStatus_Maximum_CpuTime_Exceeded => RS::MaximumCpuTimeExceeded,
+            ffi::ApplicationReturnStatus_Not_Enough_Degrees_Of_Freedom => {
+                RS::NotEnoughDegreesOfFreedom
+            }
+            ffi::ApplicationReturnStatus_Invalid_Problem_Definition => RS::InvalidProblemDefinition,
+            ffi::ApplicationReturnStatus_Invalid_Option => RS::InvalidOption,
+            ffi::ApplicationReturnStatus_Invalid_Number_Detected => RS::InvalidNumberDetected,
+            ffi::ApplicationReturnStatus_Unrecoverable_Exception => RS::UnrecoverableException,
+            ffi::ApplicationReturnStatus_NonIpopt_Exception_Thrown => RS::NonIpoptExceptionThrown,
+            ffi::ApplicationReturnStatus_Insufficient_Memory => RS::InsufficientMemory,
+            ffi::ApplicationReturnStatus_Internal_Error => RS::InternalError,
             _ => RS::UnknownError,
         }
     }
@@ -1103,9 +1225,15 @@ impl From<CreateProblemStatus> for CreateError {
     fn from(s: CreateProblemStatus) -> CreateError {
         match s {
             CreateProblemStatus::MissingInitialGuess => CreateError::InvalidInitialPoint,
-            CreateProblemStatus::TooFewOptimizationVariables => CreateError::NoOptimizationVariablesSpecified,
-            CreateProblemStatus::HaveJacobianElementsButNoConstraints => CreateError::InvalidConstraintJacobian,
-            CreateProblemStatus::HaveConstraintsButNoJacobianElements => CreateError::InvalidConstraintJacobian,
+            CreateProblemStatus::TooFewOptimizationVariables => {
+                CreateError::NoOptimizationVariablesSpecified
+            }
+            CreateProblemStatus::HaveJacobianElementsButNoConstraints => {
+                CreateError::InvalidConstraintJacobian
+            }
+            CreateProblemStatus::HaveConstraintsButNoJacobianElements => {
+                CreateError::InvalidConstraintJacobian
+            }
             _ => CreateError::Unknown,
         }
     }
@@ -1143,21 +1271,27 @@ enum CreateProblemStatus {
 }
 
 #[allow(non_snake_case)]
-impl CreateProblemStatus{
+impl CreateProblemStatus {
     fn new(status: ffi::CreateProblemStatus) -> Self {
         use crate::CreateProblemStatus as RS;
         match status {
-            ffi::CreateProblemStatus_Success                                => RS::Success,
-            ffi::CreateProblemStatus_MissingInitialGuess                    => RS::MissingInitialGuess,
-            ffi::CreateProblemStatus_TooFewOptimizationVariables            => RS::TooFewOptimizationVariables,
-            ffi::CreateProblemStatus_ConstraintSizeIsNegative               => RS::ConstraintSizeIsNegative,
-            ffi::CreateProblemStatus_HaveJacobianElementsButNoConstraints   => RS::HaveJacobianElementsButNoConstraints,
-            ffi::CreateProblemStatus_HaveConstraintsButNoJacobianElements   => RS::HaveConstraintsButNoJacobianElements,
-            ffi::CreateProblemStatus_InvalidNumHessianElements              => RS::InvalidNumHessianElements,
-            ffi::CreateProblemStatus_MissingBounds                          => RS::MissingBounds,
-            ffi::CreateProblemStatus_MissingEvalF                           => RS::MissingEvalF,
-            ffi::CreateProblemStatus_MissingEvalGradF                       => RS::MissingEvalGradF,
-            ffi::CreateProblemStatus_HaveConstraintsButNoEvalGOrEvalJacG    => RS::HaveConstraintsButNoEvalGOrEvalJacG,
+            ffi::CreateProblemStatus_Success => RS::Success,
+            ffi::CreateProblemStatus_MissingInitialGuess => RS::MissingInitialGuess,
+            ffi::CreateProblemStatus_TooFewOptimizationVariables => RS::TooFewOptimizationVariables,
+            ffi::CreateProblemStatus_ConstraintSizeIsNegative => RS::ConstraintSizeIsNegative,
+            ffi::CreateProblemStatus_HaveJacobianElementsButNoConstraints => {
+                RS::HaveJacobianElementsButNoConstraints
+            }
+            ffi::CreateProblemStatus_HaveConstraintsButNoJacobianElements => {
+                RS::HaveConstraintsButNoJacobianElements
+            }
+            ffi::CreateProblemStatus_InvalidNumHessianElements => RS::InvalidNumHessianElements,
+            ffi::CreateProblemStatus_MissingBounds => RS::MissingBounds,
+            ffi::CreateProblemStatus_MissingEvalF => RS::MissingEvalF,
+            ffi::CreateProblemStatus_MissingEvalGradF => RS::MissingEvalGradF,
+            ffi::CreateProblemStatus_HaveConstraintsButNoEvalGOrEvalJacG => {
+                RS::HaveConstraintsButNoEvalGOrEvalJacG
+            }
             _ => RS::UnknownError,
         }
     }
@@ -1176,13 +1310,17 @@ mod tests {
     }
 
     impl BasicProblem for NlpUnconstrained {
-        fn num_variables(&self) -> usize { self.num_vars }
+        fn num_variables(&self) -> usize {
+            self.num_vars
+        }
         fn bounds(&self, x_l: &mut [Number], x_u: &mut [Number]) -> bool {
             x_l.copy_from_slice(&self.lower);
             x_u.copy_from_slice(&self.upper);
             true
         }
-        fn initial_point(&self) -> Vec<Number> { self.init_point.clone() }
+        fn initial_point(&self) -> Vec<Number> {
+            self.init_point.clone()
+        }
         fn objective(&mut self, _: &[Number], _: &mut Number) -> bool {
             true
         }
@@ -1205,12 +1343,24 @@ mod tests {
         assert!(Ipopt::new_unconstrained(nlp.clone()).is_ok());
 
         // Invalid initial point
-        let nlp1 = NlpUnconstrained { init_point: vec![0.0], ..nlp.clone() };
-        assert_eq!(Ipopt::new_unconstrained(nlp1).unwrap_err(), CreateError::InvalidInitialPoint);
+        let nlp1 = NlpUnconstrained {
+            init_point: vec![0.0],
+            ..nlp.clone()
+        };
+        assert_eq!(
+            Ipopt::new_unconstrained(nlp1).unwrap_err(),
+            CreateError::InvalidInitialPoint
+        );
 
         // Invalid number of variables
-        let nlp4 = NlpUnconstrained { num_vars: 0, ..nlp.clone() };
-        assert_eq!(Ipopt::new_unconstrained(nlp4).unwrap_err(), CreateError::NoOptimizationVariablesSpecified);
+        let nlp4 = NlpUnconstrained {
+            num_vars: 0,
+            ..nlp.clone()
+        };
+        assert_eq!(
+            Ipopt::new_unconstrained(nlp4).unwrap_err(),
+            CreateError::NoOptimizationVariablesSpecified
+        );
     }
 
     #[derive(Debug, Clone)]
@@ -1227,38 +1377,62 @@ mod tests {
     }
 
     impl BasicProblem for NlpConstrained {
-        fn num_variables(&self) -> usize { self.num_vars }
+        fn num_variables(&self) -> usize {
+            self.num_vars
+        }
         fn bounds(&self, x_l: &mut [Number], x_u: &mut [Number]) -> bool {
             x_l.copy_from_slice(&self.lower);
             x_u.copy_from_slice(&self.upper);
             true
         }
-        fn initial_point(&self) -> Vec<Number> { self.init_point.clone() }
-        fn objective(&mut self, _: &[Number], _: &mut Number) -> bool { true }
-        fn objective_grad(&mut self, _: &[Number], _: &mut [Number]) -> bool { true }
+        fn initial_point(&self) -> Vec<Number> {
+            self.init_point.clone()
+        }
+        fn objective(&mut self, _: &[Number], _: &mut Number) -> bool {
+            true
+        }
+        fn objective_grad(&mut self, _: &[Number], _: &mut [Number]) -> bool {
+            true
+        }
     }
 
     impl ConstrainedProblem for NlpConstrained {
-        fn num_constraints(&self) -> usize { self.num_constraints }
-        fn num_constraint_jac_non_zeros(&self) -> usize { self.num_constraint_jac_nnz }
+        fn num_constraints(&self) -> usize {
+            self.num_constraints
+        }
+        fn num_constraint_jac_non_zeros(&self) -> usize {
+            self.num_constraint_jac_nnz
+        }
 
         fn constraint_bounds(&self, g_l: &mut [Number], g_u: &mut [Number]) -> bool {
             g_l.copy_from_slice(&self.constraint_lower);
             g_u.copy_from_slice(&self.constraint_upper);
             true
         }
-        fn constraint(&mut self, _: &[Number], _: &mut [Number]) -> bool { true }
-        fn constraint_jac_indices(&mut self, _: &mut [Index], _: &mut [Index]) -> bool { true }
-        fn constraint_jac_values(&mut self, _: &[Number], _: &mut [Number]) -> bool { true }
+        fn constraint(&mut self, _: &[Number], _: &mut [Number]) -> bool {
+            true
+        }
+        fn constraint_jac_indices(&mut self, _: &mut [Index], _: &mut [Index]) -> bool {
+            true
+        }
+        fn constraint_jac_values(&mut self, _: &[Number], _: &mut [Number]) -> bool {
+            true
+        }
 
         // Hessian Implementation
-        fn num_hessian_non_zeros(&self) -> usize { self.num_hess_nnz }
-        fn hessian_indices(&mut self, _: &mut [Index], _: &mut [Index]) -> bool { true }
-        fn hessian_values(&mut self,
-                          _: &[Number],
-                          _: Number,
-                          _: &[Number],
-                          _: &mut [Number]) -> bool {
+        fn num_hessian_non_zeros(&self) -> usize {
+            self.num_hess_nnz
+        }
+        fn hessian_indices(&mut self, _: &mut [Index], _: &mut [Index]) -> bool {
+            true
+        }
+        fn hessian_values(
+            &mut self,
+            _: &[Number],
+            _: Number,
+            _: &[Number],
+            _: &mut [Number],
+        ) -> bool {
             true
         }
     }
@@ -1282,18 +1456,44 @@ mod tests {
         assert!(Ipopt::new(nlp.clone()).is_ok());
 
         // Invalid initial point
-        let nlp1 = NlpConstrained { init_point: vec![0.0], ..nlp.clone() };
-        assert_eq!(Ipopt::new(nlp1).unwrap_err(), CreateError::InvalidInitialPoint);
+        let nlp1 = NlpConstrained {
+            init_point: vec![0.0],
+            ..nlp.clone()
+        };
+        assert_eq!(
+            Ipopt::new(nlp1).unwrap_err(),
+            CreateError::InvalidInitialPoint
+        );
 
         // Invalid number of variables
-        let nlp2 = NlpConstrained { num_vars: 0, ..nlp.clone() };
-        assert_eq!(Ipopt::new(nlp2).unwrap_err(), CreateError::NoOptimizationVariablesSpecified);
+        let nlp2 = NlpConstrained {
+            num_vars: 0,
+            ..nlp.clone()
+        };
+        assert_eq!(
+            Ipopt::new(nlp2).unwrap_err(),
+            CreateError::NoOptimizationVariablesSpecified
+        );
 
         // Invalid constraint jacobian
-        let nlp3 = NlpConstrained { num_constraint_jac_nnz: 0, ..nlp.clone() };
-        assert_eq!(Ipopt::new(nlp3).unwrap_err(), CreateError::InvalidConstraintJacobian);
+        let nlp3 = NlpConstrained {
+            num_constraint_jac_nnz: 0,
+            ..nlp.clone()
+        };
+        assert_eq!(
+            Ipopt::new(nlp3).unwrap_err(),
+            CreateError::InvalidConstraintJacobian
+        );
 
-        let nlp4 = NlpConstrained { num_constraints: 0, constraint_lower: vec![], constraint_upper: vec![], ..nlp.clone() };
-        assert_eq!(Ipopt::new(nlp4).unwrap_err(), CreateError::InvalidConstraintJacobian);
+        let nlp4 = NlpConstrained {
+            num_constraints: 0,
+            constraint_lower: vec![],
+            constraint_upper: vec![],
+            ..nlp.clone()
+        };
+        assert_eq!(
+            Ipopt::new(nlp4).unwrap_err(),
+            CreateError::InvalidConstraintJacobian
+        );
     }
 }

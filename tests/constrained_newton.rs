@@ -12,7 +12,8 @@
 //   See the License for the specific language governing permissions and
 //   limitations under the License.
 extern crate ipopt;
-#[macro_use] extern crate approx;
+#[macro_use]
+extern crate approx;
 
 use ipopt::*;
 
@@ -20,33 +21,23 @@ struct NLP {
     g_offset: [f64; 2],
 }
 impl NLP {
-    fn intermediate_cb(
-        &mut self,
-        _alg_mod: Index,
-        _iter_count: Index,
-        _obj_value: Number,
-        inf_pr: Number,
-        _inf_du: Number,
-        _mu: Number,
-        _d_norm: Number,
-        _regularization_size: Number,
-        _alpha_du: Number,
-        _alpha_pr: Number,
-        _ls_trials: Index) -> bool
-    {
-      inf_pr >= 1e-4
+    fn intermediate_cb(&mut self, data: IntermediateCallbackData) -> bool {
+        data.inf_pr >= 1e-4
     }
 }
 
-
 impl BasicProblem for NLP {
-    fn num_variables(&self) -> usize { 4 }
+    fn num_variables(&self) -> usize {
+        4
+    }
     fn bounds(&self, x_l: &mut [Number], x_u: &mut [Number]) -> bool {
         x_l.swap_with_slice(vec![1.0; 4].as_mut_slice());
         x_u.swap_with_slice(vec![5.0; 4].as_mut_slice());
         true
     }
-    fn initial_point(&self) -> Vec<Number> { vec![1.0, 5.0, 5.0, 1.0] }
+    fn initial_point(&self) -> Vec<Number> {
+        vec![1.0, 5.0, 5.0, 1.0]
+    }
     fn objective(&mut self, x: &[Number], obj: &mut Number) -> bool {
         *obj = x[0] * x[3] * (x[0] + x[1] + x[2]) + x[2];
         true
@@ -61,8 +52,12 @@ impl BasicProblem for NLP {
 }
 
 impl ConstrainedProblem for NLP {
-    fn num_constraints(&self) -> usize { 2 }
-    fn num_constraint_jac_non_zeros(&self) -> usize { 8 }
+    fn num_constraints(&self) -> usize {
+        2
+    }
+    fn num_constraint_jac_non_zeros(&self) -> usize {
+        8
+    }
 
     fn constraint_bounds(&self, g_l: &mut [Number], g_u: &mut [Number]) -> bool {
         g_l.swap_with_slice(vec![25.0, 40.0].as_mut_slice());
@@ -71,7 +66,7 @@ impl ConstrainedProblem for NLP {
     }
     fn constraint(&mut self, x: &[Number], g: &mut [Number]) -> bool {
         g[0] = x[0] * x[1] * x[2] * x[3] + self.g_offset[0];
-        g[1] = x[0]*x[0] + x[1]*x[1] + x[2]*x[2] + x[3]*x[3] + self.g_offset[1];
+        g[1] = x[0] * x[0] + x[1] * x[1] + x[2] * x[2] + x[3] * x[3] + self.g_offset[1];
         true
     }
     fn constraint_jac_indices(&mut self, irow: &mut [Index], jcol: &mut [Index]) -> bool {
@@ -94,24 +89,26 @@ impl ConstrainedProblem for NLP {
         true
     }
     fn constraint_jac_values(&mut self, x: &[Number], vals: &mut [Number]) -> bool {
-        vals[0] = x[1]*x[2]*x[3]; /* 0,0 */
-        vals[1] = x[0]*x[2]*x[3]; /* 0,1 */
-        vals[2] = x[0]*x[1]*x[3]; /* 0,2 */
-        vals[3] = x[0]*x[1]*x[2]; /* 0,3 */
+        vals[0] = x[1] * x[2] * x[3]; /* 0,0 */
+        vals[1] = x[0] * x[2] * x[3]; /* 0,1 */
+        vals[2] = x[0] * x[1] * x[3]; /* 0,2 */
+        vals[3] = x[0] * x[1] * x[2]; /* 0,3 */
 
-        vals[4] = 2.0*x[0];         /* 1,0 */
-        vals[5] = 2.0*x[1];         /* 1,1 */
-        vals[6] = 2.0*x[2];         /* 1,2 */
-        vals[7] = 2.0*x[3];         /* 1,3 */
+        vals[4] = 2.0 * x[0]; /* 1,0 */
+        vals[5] = 2.0 * x[1]; /* 1,1 */
+        vals[6] = 2.0 * x[2]; /* 1,2 */
+        vals[7] = 2.0 * x[3]; /* 1,3 */
         true
     }
 
     // Hessian Implementation
-    fn num_hessian_non_zeros(&self) -> usize { 10 }
+    fn num_hessian_non_zeros(&self) -> usize {
+        10
+    }
     fn hessian_indices(&mut self, irow: &mut [Index], jcol: &mut [Index]) -> bool {
         let mut idx = 0;
         for row in 0..4 {
-            for col in 0..row+1 {
+            for col in 0..row + 1 {
                 irow[idx] = row;
                 jcol[idx] = col;
                 idx += 1;
@@ -119,49 +116,53 @@ impl ConstrainedProblem for NLP {
         }
         true
     }
-    fn hessian_values(&mut self,
-                      x: &[Number],
-                      obj_factor: Number,
-                      lambda: &[Number],
-                      vals: &mut [Number]) -> bool {
-        vals[0] = obj_factor*2.0*x[3];                  /* 0,0 */
+    fn hessian_values(
+        &mut self,
+        x: &[Number],
+        obj_factor: Number,
+        lambda: &[Number],
+        vals: &mut [Number],
+    ) -> bool {
+        vals[0] = obj_factor * 2.0 * x[3]; /* 0,0 */
 
-        vals[1] = obj_factor*x[3];                      /* 1,0 */
-        vals[2] = 0.0;                                  /* 1,1 */
+        vals[1] = obj_factor * x[3]; /* 1,0 */
+        vals[2] = 0.0; /* 1,1 */
 
-        vals[3] = obj_factor*x[3];                      /* 2,0 */
-        vals[4] = 0.0;                                  /* 2,1 */
-        vals[5] = 0.0;                                  /* 2,2 */
+        vals[3] = obj_factor * x[3]; /* 2,0 */
+        vals[4] = 0.0; /* 2,1 */
+        vals[5] = 0.0; /* 2,2 */
 
-        vals[6] = obj_factor*(2.0*x[0] + x[1] + x[2]);  /* 3,0 */
-        vals[7] = obj_factor*x[0];                      /* 3,1 */
-        vals[8] = obj_factor*x[0];                      /* 3,2 */
-        vals[9] = 0.0;                                  /* 3,3 */
+        vals[6] = obj_factor * (2.0 * x[0] + x[1] + x[2]); /* 3,0 */
+        vals[7] = obj_factor * x[0]; /* 3,1 */
+        vals[8] = obj_factor * x[0]; /* 3,2 */
+        vals[9] = 0.0; /* 3,3 */
         /* add the portion for the first constraint */
-        vals[1] += lambda[0] * (x[2] * x[3]);           /* 1,0 */
+        vals[1] += lambda[0] * (x[2] * x[3]); /* 1,0 */
 
-        vals[3] += lambda[0] * (x[1] * x[3]);           /* 2,0 */
-        vals[4] += lambda[0] * (x[0] * x[3]);           /* 2,1 */
+        vals[3] += lambda[0] * (x[1] * x[3]); /* 2,0 */
+        vals[4] += lambda[0] * (x[0] * x[3]); /* 2,1 */
 
-        vals[6] += lambda[0] * (x[1] * x[2]);           /* 3,0 */
-        vals[7] += lambda[0] * (x[0] * x[2]);           /* 3,1 */
-        vals[8] += lambda[0] * (x[0] * x[1]);           /* 3,2 */
+        vals[6] += lambda[0] * (x[1] * x[2]); /* 3,0 */
+        vals[7] += lambda[0] * (x[0] * x[2]); /* 3,1 */
+        vals[8] += lambda[0] * (x[0] * x[1]); /* 3,2 */
 
         /* add the portion for the second constraint */
-        vals[0] += lambda[1] * 2.0;                     /* 0,0 */
+        vals[0] += lambda[1] * 2.0; /* 0,0 */
 
-        vals[2] += lambda[1] * 2.0;                     /* 1,1 */
+        vals[2] += lambda[1] * 2.0; /* 1,1 */
 
-        vals[5] += lambda[1] * 2.0;                     /* 2,2 */
+        vals[5] += lambda[1] * 2.0; /* 2,2 */
 
-        vals[9] += lambda[1] * 2.0;                     /* 3,3 */
+        vals[9] += lambda[1] * 2.0; /* 3,3 */
         true
     }
 }
 
 #[test]
 fn hs071_test() {
-    let nlp = NLP { g_offset: [0.0, 0.0] };
+    let nlp = NLP {
+        g_offset: [0.0, 0.0],
+    };
     let mut ipopt = Ipopt::new(nlp).unwrap();
     ipopt.set_option("tol", 1e-7);
     ipopt.set_option("mu_strategy", "adaptive");
@@ -170,13 +171,14 @@ fn hs071_test() {
     ipopt.set_intermediate_callback(Some(NLP::intermediate_cb));
     {
         let SolveResult {
-            solver_data: SolverDataMut {
-                problem,
-                primal_variables: x,
-                constraint_multipliers: mult_g,
-                lower_bound_multipliers: mult_x_l,
-                upper_bound_multipliers: mult_x_u,
-            },
+            solver_data:
+                SolverDataMut {
+                    problem,
+                    primal_variables: x,
+                    constraint_multipliers: mult_g,
+                    lower_bound_multipliers: mult_x_l,
+                    upper_bound_multipliers: mult_x_u,
+                },
             status,
             objective_value: obj,
             ..
@@ -211,13 +213,14 @@ fn hs071_test() {
     ipopt.set_intermediate_callback(None);
     {
         let SolveResult {
-            solver_data: SolverDataMut {
-                problem,
-                primal_variables: x,
-                constraint_multipliers: mult_g,
-                lower_bound_multipliers: mult_x_l,
-                upper_bound_multipliers: mult_x_u,
-            },
+            solver_data:
+                SolverDataMut {
+                    problem,
+                    primal_variables: x,
+                    constraint_multipliers: mult_g,
+                    lower_bound_multipliers: mult_x_l,
+                    upper_bound_multipliers: mult_x_u,
+                },
             status,
             objective_value: obj,
             ..
