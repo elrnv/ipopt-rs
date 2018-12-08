@@ -145,9 +145,14 @@ pub trait BasicProblem {
     /// Both slices will have the same size as what `num_variables` returns.
     fn bounds(&self, x_l: &mut [Number], x_u: &mut [Number]) -> bool;
 
-    /// Construct the initial guess for Ipopt to start with.
-    /// The returned `Vec` must have the same size as `num_variables`.
-    fn initial_point(&self) -> Vec<Number>;
+    /// Construct the initial guess of the primal variables for Ipopt to start with.
+    /// The given slice has the same size as `num_variables`.
+    fn initial_point(&self, x: &mut [Number]);
+
+    /// Construct the initial guess of the lower and upper bounds multipliers for Ipopt to start with.
+    /// The given slices has the same size as `num_variables`.
+    /// Note that multipliers for infinity bounds are ignored.
+    fn initial_bounds_multipliers(&self, z_l: &mut [Number], z_u: &mut [Number]);
 
     /// Objective function. This is the function being minimized.
     /// This function is internally called by Ipopt callback `eval_f`.
@@ -202,6 +207,9 @@ pub trait ConstrainedProblem: BasicProblem {
     /// Specify lower and upper bounds, `g_l` and `g_u` respectively, on the constraint function.
     /// Both slices will have the same size as what `num_constraints` returns.
     fn constraint_bounds(&self, g_l: &mut [Number], g_u: &mut [Number]) -> bool;
+    /// Construct the initial guess of the constraint multipliers for Ipopt to start with.
+    /// The given slice has the same size as `num_constraints`.
+    fn initial_constraint_multipliers(&self, lambda: &mut [Number]);
     /// Constraint Jacobian indices. These are the row and column indices of the
     /// non-zeros in the sparse representation of the matrix.
     /// This function is internally called by Ipopt callback `eval_jac_g`.
@@ -266,27 +274,10 @@ impl<'a> From<i32> for IpoptOption<'a> {
     }
 }
 
-/// An interface to mutably access internal solver data including the input problem
-/// which Ipopt owns.
-#[derive(Debug, PartialEq)]
-pub struct SolverDataMut<'a, P: 'a> {
-    /// A mutable reference to the original input problem.
-    pub problem: &'a mut P,
-    /// This is the solution after the solve.
-    pub primal_variables: &'a mut [Number],
-    /// Lower bound multipliers.
-    pub lower_bound_multipliers: &'a mut [Number],
-    /// Upper bound multipliers.
-    pub upper_bound_multipliers: &'a mut [Number],
-    /// Constraint multipliers, which are available only from contrained problems.
-    pub constraint_multipliers: &'a mut [Number],
-}
-
-/// An interface to access internal solver data including the input problem immutably.
+/// The solution of the optimization problem including variables, bound multipliers and Lagrange
+/// multipliers. This struct stores immutable slices to the solution data.
 #[derive(Clone, Debug, PartialEq)]
-pub struct SolverData<'a, P: 'a> {
-    /// A mutable reference to the original input problem.
-    pub problem: &'a P,
+pub struct Solution<'a> {
     /// This is the solution after the solve.
     pub primal_variables: &'a [Number],
     /// Lower bound multipliers.
@@ -295,6 +286,45 @@ pub struct SolverData<'a, P: 'a> {
     pub upper_bound_multipliers: &'a [Number],
     /// Constraint multipliers, which are available only from contrained problems.
     pub constraint_multipliers: &'a [Number],
+}
+
+impl Solution<'_> {
+    /// Construct the solution from raw arrays returned from the Ipopt C interface.
+    fn from_raw(data: ffi::SolverData, num_primal_vars: usize, num_dual_vars: usize) -> Solution<'_> {
+        Solution {
+            primal_variables: unsafe {
+                slice::from_raw_parts(data.x, num_primal_vars)
+            },
+            lower_bound_multipliers: unsafe {
+                slice::from_raw_parts(data.mult_x_L, num_primal_vars)
+            },
+            upper_bound_multipliers: unsafe {
+                slice::from_raw_parts(data.mult_x_U, num_primal_vars)
+            },
+            constraint_multipliers: unsafe {
+                slice::from_raw_parts(data.mult_g, num_dual_vars)
+            },
+        }
+    }
+}
+
+/// An interface to mutably access the input problem
+/// which Ipopt owns. This method also returns the solver paramters as immutable.
+#[derive(Debug, PartialEq)]
+pub struct SolverDataMut<'a, P: 'a> {
+    /// A mutable reference to the original input problem.
+    pub problem: &'a mut P,
+    /// Argument solution to the optimization problem.
+    pub solution: Solution<'a>,
+}
+
+/// An interface to access internal solver data including the input problem immutably.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SolverData<'a, P: 'a> {
+    /// A mutable reference to the original input problem.
+    pub problem: &'a P,
+    /// Argument solution to the optimization problem.
+    pub solution: Solution<'a>,
 }
 
 /// Enum that indicates in which mode the algorithm is at some point in time.
@@ -536,18 +566,7 @@ impl<P: BasicProblem> Ipopt<P> {
         SolveResult {
             solver_data: SolverDataMut {
                 problem,
-                primal_variables: unsafe {
-                    slice::from_raw_parts_mut(res.data.x, num_primal_variables)
-                },
-                lower_bound_multipliers: unsafe {
-                    slice::from_raw_parts_mut(res.data.mult_x_L, num_primal_variables)
-                },
-                upper_bound_multipliers: unsafe {
-                    slice::from_raw_parts_mut(res.data.mult_x_U, num_primal_variables)
-                },
-                constraint_multipliers: unsafe {
-                    slice::from_raw_parts_mut(res.data.mult_g, num_dual_variables)
-                },
+                solution: Solution::from_raw(res.data, num_primal_variables, num_dual_variables),
             },
             constraint_values: unsafe { slice::from_raw_parts(res.g, num_dual_variables) },
             objective_value: res.obj_val,
@@ -555,8 +574,7 @@ impl<P: BasicProblem> Ipopt<P> {
         }
     }
 
-    /// Get data for inspection and updating from the internal solver. This is useful for updating
-    /// initial guesses between solves for instance.
+    /// Get data for inspection and updating.
     #[allow(non_snake_case)]
     pub fn solver_data_mut(&mut self) -> SolverDataMut<P> {
         let Ipopt {
@@ -567,25 +585,11 @@ impl<P: BasicProblem> Ipopt<P> {
             ..
         } = *self;
 
-        let ffi::SolverData {
-            x,
-            mult_g,
-            mult_x_L,
-            mult_x_U,
-        } = unsafe { ffi::GetSolverData(nlp_internal) };
+        let data = unsafe { ffi::GetSolverData(nlp_internal) };
 
         SolverDataMut {
             problem,
-            primal_variables: unsafe { slice::from_raw_parts_mut(x, num_primal_variables) },
-            lower_bound_multipliers: unsafe {
-                slice::from_raw_parts_mut(mult_x_L, num_primal_variables)
-            },
-            upper_bound_multipliers: unsafe {
-                slice::from_raw_parts_mut(mult_x_U, num_primal_variables)
-            },
-            constraint_multipliers: unsafe {
-                slice::from_raw_parts_mut(mult_g, num_dual_variables)
-            },
+            solution: Solution::from_raw(data, num_primal_variables, num_dual_variables),
         }
     }
 
@@ -600,29 +604,51 @@ impl<P: BasicProblem> Ipopt<P> {
             ..
         } = *self;
 
-        let ffi::SolverData {
-            x,
-            mult_g,
-            mult_x_L,
-            mult_x_U,
-        } = unsafe { ffi::GetSolverData(nlp_internal) };
+        let data = unsafe { ffi::GetSolverData(nlp_internal) };
 
         SolverData {
             problem,
-            primal_variables: unsafe { slice::from_raw_parts(x, num_primal_variables) },
-            lower_bound_multipliers: unsafe {
-                slice::from_raw_parts(mult_x_L, num_primal_variables)
-            },
-            upper_bound_multipliers: unsafe {
-                slice::from_raw_parts(mult_x_U, num_primal_variables)
-            },
-            constraint_multipliers: unsafe { slice::from_raw_parts(mult_g, num_dual_variables) },
+            solution: Solution::from_raw(data, num_primal_variables, num_dual_variables),
         }
     }
 
     /**
      * Ipopt C API
      */
+
+    /// Specify lower and upper bounds for variables. No constraints on basic problems.
+    unsafe extern "C" fn basic_init(
+        n: Index,
+        init_x: Bool,
+        x: *mut Number,
+        z_l: *mut Number,
+        z_u: *mut Number,
+        m: Index,
+        _init_lambda: Bool,
+        _lambda: *mut Number,
+        user_data: ffi::UserDataPtr,
+    ) -> Bool {
+        assert_eq!(m, 0);
+        let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
+        nlp.initial_point
+    }
+
+    /// Specify the number of elements needed to be allocated for the variables. No Hessian, and no
+    /// constraints on basic problems.
+    unsafe extern "C" fn basic_sizes(
+        n: *mut Index,
+        m: *mut Index,
+        nnz_jac_g: *mut Index,
+        nnz_h_lag: *mut Index,
+        user_data: ffi::UserDataPtr,
+    ) -> Bool {
+        let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
+        *n = nlp.num_variables();
+        *m = 0; // No constraints
+        *nnz_jac_g = 0; // No constraints
+        *nnz_h_lag = 0; // No Hessian
+        true as Bool
+    }
 
     /// Specify lower and upper bounds for variables. No constraints on basic problems.
     unsafe extern "C" fn variable_only_bounds(
