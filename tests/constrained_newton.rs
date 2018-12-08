@@ -11,9 +11,8 @@
 //   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 //   See the License for the specific language governing permissions and
 //   limitations under the License.
-extern crate ipopt;
-#[macro_use]
-extern crate approx;
+
+use approx::{assert_relative_eq, relative_eq, __assert_approx};
 
 use ipopt::*;
 
@@ -35,8 +34,8 @@ impl BasicProblem for NLP {
         x_u.swap_with_slice(vec![5.0; 4].as_mut_slice());
         true
     }
-    fn initial_point(&self) -> Vec<Number> {
-        vec![1.0, 5.0, 5.0, 1.0]
+    fn initial_point(&self, x: &mut [Number]) {
+        x.swap_with_slice(vec![1.0, 5.0, 5.0, 1.0].as_mut_slice());
     }
     fn objective(&self, x: &[Number], obj: &mut Number) -> bool {
         *obj = x[0] * x[3] * (x[0] + x[1] + x[2]) + x[2];
@@ -55,7 +54,7 @@ impl ConstrainedProblem for NLP {
     fn num_constraints(&self) -> usize {
         2
     }
-    fn num_constraint_jac_non_zeros(&self) -> usize {
+    fn num_constraint_jacobian_non_zeros(&self) -> usize {
         8
     }
 
@@ -69,7 +68,7 @@ impl ConstrainedProblem for NLP {
         g[1] = x[0] * x[0] + x[1] * x[1] + x[2] * x[2] + x[3] * x[3] + self.g_offset[1];
         true
     }
-    fn constraint_jac_indices(&self, irow: &mut [Index], jcol: &mut [Index]) -> bool {
+    fn constraint_jacobian_indices(&self, irow: &mut [Index], jcol: &mut [Index]) -> bool {
         irow[0] = 0;
         jcol[0] = 0;
         irow[1] = 0;
@@ -88,7 +87,7 @@ impl ConstrainedProblem for NLP {
         jcol[7] = 3;
         true
     }
-    fn constraint_jac_values(&self, x: &[Number], vals: &mut [Number]) -> bool {
+    fn constraint_jacobian_values(&self, x: &[Number], vals: &mut [Number]) -> bool {
         vals[0] = x[1] * x[2] * x[3]; /* 0,0 */
         vals[1] = x[0] * x[2] * x[3]; /* 0,1 */
         vals[2] = x[0] * x[1] * x[3]; /* 0,2 */
@@ -174,10 +173,12 @@ fn hs071_test() {
             solver_data:
                 SolverDataMut {
                     problem,
-                    primal_variables: x,
-                    constraint_multipliers: mult_g,
-                    lower_bound_multipliers: mult_x_l,
-                    upper_bound_multipliers: mult_x_u,
+                    solution: Solution {
+                        primal_variables: x,
+                        constraint_multipliers: mult_g,
+                        lower_bound_multipliers: mult_x_l,
+                        upper_bound_multipliers: mult_x_u,
+                    }
                 },
             status,
             objective_value: obj,
@@ -216,10 +217,12 @@ fn hs071_test() {
             solver_data:
                 SolverDataMut {
                     problem,
-                    primal_variables: x,
-                    constraint_multipliers: mult_g,
-                    lower_bound_multipliers: mult_x_l,
-                    upper_bound_multipliers: mult_x_u,
+                    solution: Solution {
+                        primal_variables: x,
+                        constraint_multipliers: mult_g,
+                        lower_bound_multipliers: mult_x_l,
+                        upper_bound_multipliers: mult_x_u,
+                    }
                 },
             status,
             objective_value: obj,

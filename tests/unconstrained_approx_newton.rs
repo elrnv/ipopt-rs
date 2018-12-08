@@ -11,9 +11,8 @@
 //   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 //   See the License for the specific language governing permissions and
 //   limitations under the License.
-extern crate ipopt;
-#[macro_use]
-extern crate approx;
+
+use approx::{assert_relative_eq, relative_eq, __assert_approx};
 
 use ipopt::*;
 
@@ -28,8 +27,8 @@ impl BasicProblem for NLP {
         x_u.swap_with_slice(vec![1e20; 2].as_mut_slice());
         true
     }
-    fn initial_point(&self) -> Vec<Number> {
-        vec![0.0, 0.0]
+    fn initial_point(&self, x: &mut [Number]) {
+        x.swap_with_slice(vec![0.0, 0.0].as_mut_slice());
     }
     fn objective(&self, x: &[Number], obj: &mut Number) -> bool {
         *obj = (x[0] - 1.0) * (x[0] - 1.0) + (x[1] - 1.0) * (x[1] - 1.0);
@@ -54,7 +53,10 @@ fn quadratic_test() {
         let SolveResult {
             solver_data:
                 SolverDataMut {
-                    primal_variables: x,
+                    solution: Solution {
+                        primal_variables: x,
+                        ..
+                    },
                     ..
                 },
             objective_value: obj,
@@ -72,7 +74,10 @@ fn quadratic_test() {
         let SolveResult {
             solver_data:
                 SolverDataMut {
-                    primal_variables: x,
+                    solution: Solution {
+                        primal_variables: x,
+                        ..
+                    },
                     ..
                 },
             objective_value: obj,
