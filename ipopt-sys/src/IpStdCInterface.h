@@ -65,8 +65,31 @@ extern "C"
    *  and individual callback function */
   typedef void * UserDataPtr;
 
+  /** Type defining the callback function for setting scaling
+   *  parameters. This method is called if nlp_scaling_method is set
+   *  to user-scaling. This function is optional. */
+  typedef Bool (*ScalingParams_CB)(Number* obj_scaling,
+                                   Bool* use_x_scaling, Index n,
+                                   Number* x_scaling,
+                                   Bool* use_g_scaling, Index m,
+                                   Number* g_scaling,
+                                   UserDataPtr user_data);
+
+  /** Type defining the callback function for setting sizes for arrays
+   *  that will store variables, constraint values and derivatives. */
+  typedef Bool (*Sizes_CB)(Index *n, Index *m,
+                           Index *nnz_jac_g, Index *nnz_h_lag,
+                           UserDataPtr user_data);
+
+  /** Type defining the callback function for initializing variables
+   *  and multipliers. */
+  typedef Bool (*Init_CB)(Index n, Bool init_x, Number* x, 
+                          Bool init_z, Number* z_L, Number* z_U, 
+                          Index m, Bool init_lambda, Number* lambda, 
+                          UserDataPtr user_data);
+
   /** Type defining the callback function for specifying variable and
-   * constraint lower and upper bounds. */
+   *  constraint lower and upper bounds. */
   typedef Bool (*Bounds_CB)(Index n, Number* x_l, Number* x_u,
                             Index m, Number* g_l, Number* g_u,
                             UserDataPtr user_data);
@@ -74,25 +97,25 @@ extern "C"
   /** Type defining the callback function for evaluating the value of
    *  the objective function.  Return value should be set to false if
    *  there was a problem doing the evaluation. */
-  typedef Bool (*Eval_F_CB)(Index n, Number* x, Bool new_x,
+  typedef Bool (*Eval_F_CB)(Index n, const Number* x, Bool new_x,
                             Number* obj_value, UserDataPtr user_data);
 
   /** Type defining the callback function for evaluating the gradient of
    *  the objective function.  Return value should be set to false if
    *  there was a problem doing the evaluation. */
-  typedef Bool (*Eval_Grad_F_CB)(Index n, Number* x, Bool new_x,
+  typedef Bool (*Eval_Grad_F_CB)(Index n, const Number* x, Bool new_x,
                                  Number* grad_f, UserDataPtr user_data);
 
   /** Type defining the callback function for evaluating the value of
    *  the constraint functions.  Return value should be set to false if
    *  there was a problem doing the evaluation. */
-  typedef Bool (*Eval_G_CB)(Index n, Number* x, Bool new_x,
+  typedef Bool (*Eval_G_CB)(Index n, const Number* x, Bool new_x,
                             Index m, Number* g, UserDataPtr user_data);
 
   /** Type defining the callback function for evaluating the Jacobian of
    *  the constrant functions.  Return value should be set to false if
    *  there was a problem doing the evaluation. */
-  typedef Bool (*Eval_Jac_G_CB)(Index n, Number *x, Bool new_x,
+  typedef Bool (*Eval_Jac_G_CB)(Index n, const Number *x, Bool new_x,
                                 Index m, Index nele_jac,
                                 Index *iRow, Index *jCol, Number *values,
                                 UserDataPtr user_data);
@@ -100,8 +123,8 @@ extern "C"
   /** Type defining the callback function for evaluating the Hessian of
    *  the Lagrangian function.  Return value should be set to false if
    *  there was a problem doing the evaluation. */
-  typedef Bool (*Eval_H_CB)(Index n, Number *x, Bool new_x, Number obj_factor,
-                            Index m, Number *lambda, Bool new_lambda,
+  typedef Bool (*Eval_H_CB)(Index n, const Number *x, Bool new_x, Number obj_factor,
+                            Index m, const Number *lambda, Bool new_lambda,
                             Index nele_hess, Index *iRow, Index *jCol,
                             Number *values, UserDataPtr user_data);
 
@@ -122,16 +145,11 @@ extern "C"
 
   enum CreateProblemStatus {
       Success,
+      MissingSizes,
       MissingInitialGuess,
-      TooFewOptimizationVariables,
-      ConstraintSizeIsNegative,
-      HaveJacobianElementsButNoConstraints,
-      HaveConstraintsButNoJacobianElements,
-      InvalidNumHessianElements,
       MissingBounds,
       MissingEvalF,
       MissingEvalGradF,
-      HaveConstraintsButNoEvalGOrEvalJacG,
   };
 
   /** Function for creating a new Ipopt Problem object.  This function
@@ -147,18 +165,13 @@ extern "C"
    *  or reading the options file. */
   IPOPT_EXPORT(enum CreateProblemStatus) CreateIpoptProblem(
       IpoptProblem * const p /** Output problem */
-    , Index n             /** Number of optimization variables */
-    , const Number* init_x
-    , const Number* init_z_L
-    , const Number* init_z_U
-    , Index m             /** Number of constraints. */
-    , const Number* init_lam
-    , Index nele_jac      /** Number of non-zero elements in constraint
-                              Jacobian. */
-    , Index nele_hess     /** Number of non-zero elements in Hessian of
-                              Lagrangian. */
     , Index index_style   /** indexing style for iRow & jCol,
 				 0 for C style, 1 for Fortran style */
+    , Sizes_CB sizes      /** Callback function for setting sizes of
+                              arrays that store variables, constraint
+                              values and derivatives. */
+    , Init_CB init        /** Callback function for initializing
+                              variables and multipliers.  */
     , Bounds_CB bounds    /** Callback function for setting lower and
                               upper bounds on variable and constraints.
                               */
@@ -174,6 +187,8 @@ extern "C"
                               of constraint functions */
     , Eval_H_CB eval_h    /** Callback function for evaluating Hessian
                               of Lagrangian function */
+    , ScalingParams_CB scaling/** Callback function for setting scaling
+                                This function pointer can be Null */
   );
 
   /** Method for freeing a previously created IpoptProblem.  After
@@ -183,30 +198,21 @@ extern "C"
 
   /** Function for adding a string option.  Returns FALSE the option
    *  could not be set (e.g., if keyword is unknown) */
-  IPOPT_EXPORT(Bool) AddIpoptStrOption(IpoptProblem ipopt_problem, char* keyword, char* val);
+  IPOPT_EXPORT(Bool) AddIpoptStrOption(IpoptProblem ipopt_problem, const char* keyword, const char* val);
 
   /** Function for adding a Number option.  Returns FALSE the option
    *  could not be set (e.g., if keyword is unknown) */
-  IPOPT_EXPORT(Bool) AddIpoptNumOption(IpoptProblem ipopt_problem, char* keyword, Number val);
+  IPOPT_EXPORT(Bool) AddIpoptNumOption(IpoptProblem ipopt_problem, const char* keyword, Number val);
 
   /** Function for adding an Int option.  Returns FALSE the option
    *  could not be set (e.g., if keyword is unknown) */
-  IPOPT_EXPORT(Bool) AddIpoptIntOption(IpoptProblem ipopt_problem, char* keyword, Int val);
+  IPOPT_EXPORT(Bool) AddIpoptIntOption(IpoptProblem ipopt_problem, const char* keyword, Int val);
 
   /** Function for opening an output file for a given name with given
    *  printlevel.  Returns false, if there was a problem opening the
    *  file. */
-  IPOPT_EXPORT(Bool) OpenIpoptOutputFile(IpoptProblem ipopt_problem, char* file_name,
+  IPOPT_EXPORT(Bool) OpenIpoptOutputFile(IpoptProblem ipopt_problem, const char* file_name,
                            Int print_level);
-
-  /** Optional function for setting scaling parameter for the NLP.
-   *  This corresponds to the get_scaling_parameters method in TNLP.
-   *  If the pointers x_scaling or g_scaling are NULL, then no scaling
-   *  for x resp. g is done. */
-  IPOPT_EXPORT(Bool) SetIpoptProblemScaling(IpoptProblem ipopt_problem,
-			      Number obj_scaling,
-			      Number* x_scaling,
-			      Number* g_scaling);
 
   /** Setting a callback function for the "intermediate callback"
    *  method in the TNLP.  This gives control back to the user once
@@ -257,11 +263,6 @@ extern "C"
       IpoptProblem ipopt_problem
   );
 
-
-  /**
-  void IpoptStatisticsCounts;
-
-  void IpoptStatisticsInfeasibilities; */
 #ifdef __cplusplus
 } /* extern "C" { */
 #endif

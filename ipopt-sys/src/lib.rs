@@ -34,64 +34,38 @@ mod tests {
         // rough comparator
         let approx_eq = |a: f64, b: f64| assert!((a-b).abs() < 1e-5, format!("{} vs. {}", a, b));
 
-        /* set the number of variables and allocate space for the bounds */
-        let n = 4;  // number of variabes
-
-        /* set the number of constraints and allocate space for the bounds */
-        let m = 2usize; // number of constraints
-
-        /* initialize values for the initial point */
-        let mut x = vec![1.0, 5.0, 5.0, 1.0];
-
-        /* allocate space to store the bound multipliers at the solution */
-        let mut mult_g = Vec::with_capacity(m);
-        mult_g.resize(m, 0.0);
-        let mut mult_x_L = Vec::with_capacity(n);
-        mult_x_L.resize(n, 0.0);
-        let mut mult_x_U = Vec::with_capacity(n);
-        mult_x_U.resize(n, 0.0);
-
         let mut nlp: IpoptProblem = ::std::ptr::null_mut();
-
         let create_status = unsafe {
             /* create the IpoptProblem */
             CreateIpoptProblem(
                 &mut nlp as *mut IpoptProblem,
-                n as Index,
-                x.as_mut_ptr(),         
-                mult_x_L.as_mut_ptr(),  // Initial values for the multipliers for
-                                        // the lower variable bounds. (if warm start)
-                mult_x_U.as_mut_ptr(),  // Initial values for the multipliers for
-                                        // the upper variable bounds. (if warm start)
-                m as Index,
-                mult_g.as_mut_ptr(),    // Initial values for constraint multipliers.
-                8, 10, 0, 
+                0, 
+                Some(sizes),
+                Some(init),
                 Some(bounds),
                 Some(eval_f),
                 Some(eval_g),
                 Some(eval_grad_f),
                 Some(eval_jac_g),
-                Some(eval_h))
+                Some(eval_h),
+                None)
         };
 
         assert_eq!(create_status, CreateProblemStatus_Success);
 
-        /* set some options */
-        /* Unfortunately Ipopt strings are non-const, making this awkward. */
-        let mut tol_str = CString::new("tol").unwrap();
-        let mut mu_strategy_str = CString::new("mu_strategy").unwrap();
-        let mut adaptive_str = CString::new("adaptive").unwrap();
-        let mut print_lvl_str = CString::new("print_level").unwrap();
-        let mut sb_str = CString::new("sb").unwrap();
-        let mut yes_str = CString::new("yes").unwrap();
+        /* Set some options */
+        let tol_str = CString::new("tol").unwrap();
+        let mu_strategy_str = CString::new("mu_strategy").unwrap();
+        let adaptive_str = CString::new("adaptive").unwrap();
+        let print_lvl_str = CString::new("print_level").unwrap();
+        let sb_str = CString::new("sb").unwrap();
+        let yes_str = CString::new("yes").unwrap();
 
         unsafe {
-            AddIpoptIntOption(nlp, (&mut print_lvl_str).as_ptr() as *mut i8, 0);
-            AddIpoptNumOption(nlp, (&mut tol_str).as_ptr() as *mut i8, 1e-7);
-            AddIpoptStrOption(nlp, (&mut mu_strategy_str).as_ptr() as *mut i8,
-                                   (&mut adaptive_str).as_ptr() as *mut i8);
-            AddIpoptStrOption(nlp, (&mut sb_str).as_ptr() as *mut i8,
-                                   (&mut yes_str).as_ptr() as *mut i8);
+            AddIpoptIntOption(nlp, print_lvl_str.as_ptr(), 0);
+            AddIpoptNumOption(nlp, tol_str.as_ptr(), 1e-7);
+            AddIpoptStrOption(nlp, mu_strategy_str.as_ptr(), adaptive_str.as_ptr());
+            AddIpoptStrOption(nlp, sb_str.as_ptr(), yes_str.as_ptr());
             SetIntermediateCallback(nlp, Some(intermediate_cb));
         }
 
@@ -108,10 +82,17 @@ mod tests {
 
         assert_eq!(sol.status, ApplicationReturnStatus_User_Requested_Stop);
 
-        let mut g = Vec::new();
-        g.resize(m, 0.0);
+        let m = 2;
+        let n = 4;
 
-        // Write solutions back to our managed Vecs
+        let mut g = vec![0.0; m];
+
+        // Get solution data
+        let mut x = vec![0.0; n];
+        let mut mult_g = vec![0.0; m];
+        let mut mult_x_L = vec![0.0; n];
+        let mut mult_x_U = vec![0.0; n];
+
         x.copy_from_slice(unsafe { slice::from_raw_parts(sol.data.x, n) });
         g.copy_from_slice(unsafe { slice::from_raw_parts(sol.g, m) });
         mult_g.copy_from_slice(unsafe { slice::from_raw_parts(sol.data.mult_g, m) });
@@ -192,6 +173,55 @@ mod tests {
     }
 
     /* Function Implementations */
+    unsafe extern "C" fn sizes(
+        n: *mut Index,
+        m: *mut Index,
+        nnz_jac_g: *mut Index,
+        nnz_h_lag: *mut Index,
+        _user_data: UserDataPtr) -> Bool
+    {
+        *n = 4; // Number of variables
+        *m = 2; // Number of constraints
+        *nnz_jac_g = 8; // Number of jacobian non-zeros
+        *nnz_h_lag = 10; // Number of hessian non-zeros
+        true as Bool
+    }
+
+    unsafe extern "C" fn init(
+        n: Index,
+        init_x: Bool,
+        x: *mut Number,
+        init_z: Bool,
+        z_L: *mut Number,
+        z_U: *mut Number,
+        m: Index,
+        init_lambda: Bool,
+        lambda: *mut Number,
+        _user_data: UserDataPtr) -> Bool
+    {
+        assert_eq!(n, 4);
+        assert_eq!(m, 2);
+        if init_x != 0 {
+            /* initialize values for the initial point */
+            *x.offset(0) = 1.0;
+            *x.offset(1) = 5.0;
+            *x.offset(2) = 5.0;
+            *x.offset(3) = 1.0;
+        }
+        if init_z != 0 {
+            /* initialize multipliers for the variable bounds */
+            for i in 0..4 {
+                *z_L.offset(i) = 0.0;
+                *z_U.offset(i) = 0.0;
+            }
+        }
+        if init_lambda != 0 {
+            *lambda.offset(0) = 0.0;
+            *lambda.offset(1) = 0.0;
+        }
+        true as Bool
+    }
+
     unsafe extern "C" fn bounds(
         n: Index,
         x_l: *mut Number,
@@ -220,7 +250,7 @@ mod tests {
 
     unsafe extern "C" fn eval_f(
         n: Index,
-        x: *mut Number,
+        x: *const Number,
         _new_x: Bool,
         obj_value: *mut Number,
         _user_data: UserDataPtr) -> Bool {
@@ -234,7 +264,7 @@ mod tests {
 
     unsafe extern "C" fn eval_grad_f(
         n: Index,
-        x: *mut Number,
+        x: *const Number,
         _new_x: Bool,
         grad_f: *mut Number,
         _user_data: UserDataPtr) -> Bool {
@@ -251,7 +281,7 @@ mod tests {
 
     unsafe extern "C" fn eval_g(
         n: Index,
-        x: *mut Number,
+        x: *const Number,
         _new_x: Bool,
         m: Index,
         g: *mut Number,
@@ -273,7 +303,7 @@ mod tests {
 
     unsafe extern "C" fn eval_jac_g(
         _n: Index,
-        x: *mut Number,
+        x: *const Number,
         _new_x: Bool,
         _m: Index,
         _nele_jac: Index,
@@ -321,11 +351,11 @@ mod tests {
 
     unsafe extern "C" fn eval_h(
         _n: Index,
-        x: *mut Number,
+        x: *const Number,
         _new_x: Bool,
         obj_factor: Number,
         _m: Index,
-        lambda: *mut Number,
+        lambda: *const Number,
         _new_lambda: Bool,
         nele_hess: Index,
         iRow: *mut Index,

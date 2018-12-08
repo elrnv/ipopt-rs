@@ -16,6 +16,7 @@
 #include "IpException.hpp"
 #include "IpStdCInterface.h"
 #include "IpSmartPtr.hpp"
+#include <vector>
 
 namespace Ipopt
 {
@@ -37,32 +38,29 @@ namespace Ipopt
      *  for evaluation callback functions, and starting points. Note
      *  that the constrctor does not make a copy of any of the Number
      *  arrays, i.e. it is up to the called to keep them around. */
-    StdInterfaceTNLP(Index n_var,
-                     Index n_con,
-                     Index nele_jac,
-                     Index nele_hess,
-                     Index index_style,
-                     const Number* start_x,
-                     const Number* start_lam,
-                     const Number* start_z_L,
-                     const Number* start_z_U,
+    StdInterfaceTNLP(Index index_style,
+                     Sizes_CB sizes,
+                     Init_CB init,
                      Bounds_CB bounds,
                      Eval_F_CB eval_f,
                      Eval_G_CB eval_g,
                      Eval_Grad_F_CB eval_grad_f,
                      Eval_Jac_G_CB eval_jac_g,
                      Eval_H_CB eval_h,
-                     Intermediate_CB* intermediate_cb,
-                     Number* x_sol,
-                     Number* z_L_sol,
-                     Number* z_U_sol,
-                     Number* g_sol,
-                     Number* lam_sol,
-                     Number* obj_sol,
-                     UserDataPtr user_data,
-                     Number obj_scaling=1,
-                     const Number* x_scaling = NULL,
-                     const Number* g_scaling = NULL);
+                     ScalingParams_CB scaling,
+                     Intermediate_CB* intermediate_cb);
+
+    /** Getters for the solution data */
+
+    /**
+     * Get optimal variables and multipliers. This function returns the arguments of the
+     * optimization.
+     */
+    SolverData get_solution_arguments();
+
+    Number get_objective_value();
+
+    Number* get_constraint_function_values();
 
     /** Default destructor */
     virtual ~StdInterfaceTNLP();
@@ -150,27 +148,12 @@ namespace Ipopt
 
     /** @name Information about the problem */
     //@{
-    /** Number of variables */
-    const Index n_var_;
-    /** Number of constraints */
-    const Index n_con_;
-    /** Number of non-zero elements in the constraint Jacobian */
-    const Index nele_jac_;
-    /** Number of non-zero elements in the Hessian */
-    const Index nele_hess_;
     /** Starting value of the iRow and jCol parameters for matrices */
     const Index index_style_;
-    /** Pointer to Number array containing starting point for variables */
-    const Number* start_x_;
-    /** Pointer to Number array containing starting values for
-     *  constraint multipliers */
-    const Number* start_lam_;
-    /** Pointer to Number array containing starting values for lower
-     *  bound multipliers */
-    const Number* start_z_L_;
-    /** Pointer to Number array containing starting values for upper
-     *  bound multipliers */
-    const Number* start_z_U_;
+    /** Pointer to callback function setting array size information. */
+    Sizes_CB sizes_;
+    /** Pointer to callback function initializing the iterates. */
+    Init_CB init_;
     /** Pointer to callback function evaluating lower and upper bounds on
      *  variables and constraint functions */
     Bounds_CB bounds_;
@@ -185,52 +168,31 @@ namespace Ipopt
     Eval_Jac_G_CB eval_jac_g_;
     /** Pointer to callback function evaluating Hessian of Lagrangian */
     Eval_H_CB eval_h_;
+    /** Pointer to callback function for setting scaling parameters */
+    ScalingParams_CB scaling_;
     /** Pointer to intermediate callback function giving control to user */
     Intermediate_CB* intermediate_cb_;
     /** Pointer to user data */
     UserDataPtr user_data_;
-    /** Objective scaling factor */
-    Number obj_scaling_;
-    /** Scaling factors for variables (if not NULL) */
-    const Number* x_scaling_;
-    /** Scaling factors for constraints (if not NULL) */
-    const Number* g_scaling_;
     //@}
 
-
-    /** A non-const copy of x - this is kept up-to-date in apply_new_x */
-    Number* non_const_x_;
-
-    /** Pointers to the user provided vectors for solution */
-    Number* x_sol_;
-    Number* z_L_sol_;
-    Number* z_U_sol_;
-    Number* g_sol_;
-    Number* lambda_sol_;
-    Number* obj_sol_;
-
-    /** Internal function to update the internal and ampl state if the
-     *  x value changes */
-    void apply_new_x(bool new_x, Index n, const Number* x);
-
-    /**@name Default Compiler Generated Methods
-     * (Hidden to avoid implicit creation/calling).
-     * These methods are not implemented and 
-     * we do not want the compiler to implement
-     * them for us, so we declare them private
-     * and do not define them. This ensures that
-     * they will not be implicitly created/called. */
-    //@{
-    /** Default Constructor */
-    StdInterfaceTNLP();
-
-    /** Copy Constructor */
-    StdInterfaceTNLP(const StdInterfaceTNLP&);
+    /** Solution data */
+    std::vector<Number> x_sol_;
+    std::vector<Number> z_L_sol_;
+    std::vector<Number> z_U_sol_;
+    std::vector<Number> g_sol_;
+    std::vector<Number> lambda_sol_;
+    Number obj_sol_;
 
     /** Overloaded Equals Operator */
     void operator=(const StdInterfaceTNLP&);
     //@}
 
+    /** Deleted Default Constructor */
+    StdInterfaceTNLP();
+
+    /** Deleted Copy Constructor */
+    StdInterfaceTNLP(const StdInterfaceTNLP&);
   };
 
 } // namespace Ipopt

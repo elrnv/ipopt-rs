@@ -137,7 +137,7 @@ fn main() {
                 String::from("--with-blas=BUILD")
             } else {
                 let mkl_prefix = format!("{}/lib/libmkl_", mkl_dir.display());
-                let link_libs = format!("-L{mkl}/lib -ltbb -lstdc++ -lpthread -lm -ldl", mkl=mkl_dir.display());
+                let link_libs = format!("-L{mkl}/lib -ltbb -lc++ -lpthread -lm -ldl", mkl=mkl_dir.display());
                 format!("--with-blas={mkl}intel_lp64.a {mkl}tbb_thread.a {mkl}core.a {}",
                         link_libs, mkl=mkl_prefix)
             }

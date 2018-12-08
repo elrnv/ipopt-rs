@@ -19,116 +19,45 @@ using namespace std;
 
 struct IpoptProblemInfo
 {
-  Index nele_jac;
-  Index nele_hess;
-  Index index_style;
-  Bounds_CB bounds;
-  Eval_F_CB eval_f;
-  Eval_G_CB eval_g;
-  Eval_Grad_F_CB eval_grad_f;
-  Eval_Jac_G_CB eval_jac_g;
-  Eval_H_CB eval_h;
   Intermediate_CB intermediate_cb;
   Ipopt::SmartPtr<Ipopt::IpoptApplication> app;
-  Number obj_scaling;
-  vector<Number> x_scaling;
-  vector<Number> g_scaling;
   Ipopt::SmartPtr<Ipopt::StdInterfaceTNLP> nlp;
   Index num_solves;
-  vector<Number> x;
-  vector<Number> g; // output only
-  Number obj_val; // output only
-  vector<Number> mult_g;
-  vector<Number> mult_x_L;
-  vector<Number> mult_x_U;
 };
 
 enum CreateProblemStatus CreateIpoptProblem(
   IpoptProblem * const out_problem,
-  Index n,
-  const Number* init_x,
-  const Number* init_mult_x_L,
-  const Number* init_mult_x_U,
-  Index m,
-  const Number* init_mult_g,
-  Index nele_jac,
-  Index nele_hess,
   Index index_style,
+  Sizes_CB sizes,
+  Init_CB init,
   Bounds_CB bounds,
   Eval_F_CB eval_f,
   Eval_G_CB eval_g,
   Eval_Grad_F_CB eval_grad_f,
   Eval_Jac_G_CB eval_jac_g,
-  Eval_H_CB eval_h)
+  Eval_H_CB eval_h,
+  ScalingParams_CB scaling)
 {
   using namespace Ipopt;
 
   // make sure input is Ok
-  if ( n<1 ) {
-      return TooFewOptimizationVariables;
-  } else if ( m<0 ) {
-      return ConstraintSizeIsNegative;
-  } else if ( !init_x ) {
+  if ( !init ) {
       return MissingInitialGuess;
+  } else if ( !sizes ) {
+      return MissingSizes;
   } else if ( !bounds ) {
       return MissingBounds;
-  } else if ( m==0 && nele_jac != 0) {
-      return HaveJacobianElementsButNoConstraints;
-  } else if ( m>0 && nele_jac < 1) {
-      return HaveConstraintsButNoJacobianElements;
-  } else if ( nele_hess < 0 ) {
-      return InvalidNumHessianElements;
   } else if ( !eval_f ) {
       return MissingEvalF;
   } else if ( !eval_grad_f ) {
       return MissingEvalGradF;
-  } else if ( m>0 && (!eval_g || !eval_jac_g) ) {
-      return HaveConstraintsButNoEvalGOrEvalJacG;
-      *out_problem = NULL;
   }
 
   IpoptProblem problem = new IpoptProblemInfo;
 
-  // Copy the starting point information
-  problem->x.reserve(n);
-  copy_n(init_x, n, back_inserter(problem->x));
-  if (init_mult_x_L) {
-    problem->mult_x_L.reserve(n);
-    copy_n(init_mult_x_L, n, back_inserter(problem->mult_x_L));
-  }
-  if (init_mult_x_U) {
-    problem->mult_x_U.reserve(n);
-    copy_n(init_mult_x_U, n, back_inserter(problem->mult_x_U));
-  }
-
-  if (m>0) {
-    problem->g.resize(m, 0); // initialize solution memory
-
-    // Copy the starting point information
-    if (init_mult_g) {
-      problem->mult_g.reserve(m);
-      copy_n(init_mult_g, m, back_inserter(problem->mult_g));
-    }
-  }
-
-  problem->obj_val = 0.0;
-
-  problem->nele_jac = nele_jac;
-  problem->nele_hess = nele_hess;
-  problem->index_style = index_style;
-  problem->bounds = bounds;
-  problem->eval_f = eval_f;
-  problem->eval_g = eval_g;
-  problem->eval_grad_f = eval_grad_f;
-  problem->eval_jac_g = eval_jac_g;
-  problem->eval_h = eval_h;
   problem->intermediate_cb = nullptr;
-  problem->x_scaling.reserve(n);
-  problem->g_scaling.reserve(m);
 
   problem->app = new IpoptApplication();
-
-  problem->obj_scaling = 1;
 
   problem->num_solves = 0;
 
@@ -136,32 +65,17 @@ enum CreateProblemStatus CreateIpoptProblem(
   try {
     // Create the original nlp
     problem->nlp = new StdInterfaceTNLP(
-            n,
-            m,
-            problem->nele_jac,
-            problem->nele_hess,
-            problem->index_style,
-            problem->x.data(),
-            problem->mult_g.data(),
-            problem->mult_x_L.data(),
-            problem->mult_x_U.data(),
-            problem->bounds,
-            problem->eval_f,
-            problem->eval_g,
-            problem->eval_grad_f,
-            problem->eval_jac_g,
-            problem->eval_h,
-            &problem->intermediate_cb,
-            problem->x.data(),
-            problem->mult_x_L.data(),
-            problem->mult_x_U.data(),
-            problem->g.data(),
-            problem->mult_g.data(), // outputs
-            &problem->obj_val,
-            nullptr,
-            problem->obj_scaling,
-            problem->x_scaling.data(),
-            problem->g_scaling.data());
+            index_style,
+            sizes,
+            init,
+            bounds,
+            eval_f,
+            eval_g,
+            eval_grad_f,
+            eval_jac_g,
+            eval_h,
+            scaling,
+            &problem->intermediate_cb);
   }
   catch (INVALID_STDINTERFACE_NLP& exc) {
     exc.ReportException(*problem->app->Jnlst(), J_ERROR);
@@ -184,58 +98,33 @@ void FreeIpoptProblem(IpoptProblem ipopt_problem)
   delete ipopt_problem;
 }
 
-
-Bool AddIpoptStrOption(IpoptProblem ipopt_problem, char* keyword, char* val)
+Bool AddIpoptStrOption(IpoptProblem ipopt_problem, const char* keyword, const char* val)
 {
   std::string tag(keyword);
   std::string value(val);
   return (Bool) ipopt_problem->app->Options()->SetStringValue(tag, value);
 }
 
-Bool AddIpoptNumOption(IpoptProblem ipopt_problem, char* keyword, Number val)
+Bool AddIpoptNumOption(IpoptProblem ipopt_problem, const char* keyword, Number val)
 {
   std::string tag(keyword);
   Ipopt::Number value=val;
   return (Bool) ipopt_problem->app->Options()->SetNumericValue(tag, value);
 }
 
-Bool AddIpoptIntOption(IpoptProblem ipopt_problem, char* keyword, Int val)
+Bool AddIpoptIntOption(IpoptProblem ipopt_problem, const char* keyword, Int val)
 {
   std::string tag(keyword);
   Ipopt::Index value=val;
   return (Bool) ipopt_problem->app->Options()->SetIntegerValue(tag, value);
 }
 
-Bool OpenIpoptOutputFile(IpoptProblem ipopt_problem, char* file_name,
+Bool OpenIpoptOutputFile(IpoptProblem ipopt_problem, const char* file_name,
                          Int print_level)
 {
   std::string name(file_name);
   Ipopt::EJournalLevel level = Ipopt::EJournalLevel(print_level);
   return (Bool) ipopt_problem->app->OpenOutputFile(name, level);
-}
-
-Bool SetIpoptProblemScaling(IpoptProblem ipopt_problem,
-                            Number obj_scaling,
-                            Number* x_scaling,
-                            Number* g_scaling)
-{
-  ipopt_problem->obj_scaling = obj_scaling;
-  if (x_scaling) {
-    ipopt_problem->x_scaling.clear();
-    copy_n(x_scaling, ipopt_problem->x.size(), back_inserter(ipopt_problem->x_scaling));
-  }
-  else {
-    ipopt_problem->x_scaling.clear();
-  }
-  if (g_scaling) {
-    ipopt_problem->g_scaling.clear();
-    copy_n(g_scaling, ipopt_problem->g.size(), back_inserter(ipopt_problem->g_scaling));
-  }
-  else {
-    ipopt_problem->g_scaling.clear();
-  }
-
-  return (Bool)true;
 }
 
 Bool SetIntermediateCallback(IpoptProblem ipopt_problem,
@@ -253,11 +142,6 @@ SolveResult IpoptSolve(IpoptProblem ipopt_problem, UserDataPtr user_data)
 
   SmartPtr<TNLP> tnlp(ipopt_problem->nlp);
 
-  SolveResult res;
-  res.data = GetSolverData(ipopt_problem);
-  res.g = ipopt_problem->g.data();
-  res.obj_val = 0.0;
-
   Ipopt::ApplicationReturnStatus status;
 
   try {
@@ -265,6 +149,10 @@ SolveResult IpoptSolve(IpoptProblem ipopt_problem, UserDataPtr user_data)
           // Initialize and process options
           status = ipopt_problem->app->Initialize();
           if (status != Ipopt::Solve_Succeeded) {
+            SolveResult res;
+            res.data = GetSolverData(ipopt_problem);
+            res.g = ipopt_problem->nlp->get_constraint_function_values();
+            res.obj_val = ipopt_problem->nlp->get_objective_value();
             res.status = (::ApplicationReturnStatus) status;
             return res;
           }
@@ -286,7 +174,10 @@ SolveResult IpoptSolve(IpoptProblem ipopt_problem, UserDataPtr user_data)
 
   ipopt_problem->num_solves += 1;
 
-  res.obj_val = ipopt_problem->obj_val;
+  SolveResult res;
+  res.data = GetSolverData(ipopt_problem);
+  res.g = ipopt_problem->nlp->get_constraint_function_values();
+  res.obj_val = ipopt_problem->nlp->get_objective_value();
   res.status = (::ApplicationReturnStatus) status;
 
   return res;
@@ -294,12 +185,6 @@ SolveResult IpoptSolve(IpoptProblem ipopt_problem, UserDataPtr user_data)
 
 SolverData GetSolverData(IpoptProblem ipopt_problem)
 {
-  SolverData data;
-  data.x = ipopt_problem->x.data();
-  data.mult_g = ipopt_problem->mult_g.data();
-  data.mult_x_L = ipopt_problem->mult_x_L.data();
-  data.mult_x_U = ipopt_problem->mult_x_U.data();
-
-  return data;
+  return ipopt_problem->nlp->get_solution_arguments();
 }
 
