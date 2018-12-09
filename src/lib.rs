@@ -40,15 +40,8 @@
  * > formulated in the above formulation by setting the corresponding components of
  * > `g_L` and `g_U` to the same value.
  *
- * This crate wraps Ipopt's C++ interface in a custom C API, which is significantly different than
- * Ipopt's own interface.  The motivation for maintaining a custom C API is to allow users to reuse
- * Ipopt instances for multiple solves. For instance, the standard C API prevents users from
- * modifying their problem structure between solves without reconstructing solver instances. This
- * workflow reduces performance costs, which can be noticeable when Ipopt is used to solve smaller
- * subproblems.
- *
- * This crate attempts to 
- *   - reduce the boilerplate required to solve simple unconstrained problems, and
+ * This crate aims to 
+ *   - reduce the boilerplate, especially for setting up simple unconstrained problems, and
  *   - prevent common mistakes when defining optimization problems as early as possible.
  *
  *
