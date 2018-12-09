@@ -1,6 +1,6 @@
 [package]
 name = "ipopt"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["Egor Larionov <egor.larionov@gmail.com>"]
 license = "Apache-2.0"
 description = "Rust language bindings for the Ipopt non-linear constrained optimization library."

@@ -1,6 +1,6 @@
 [package]
 name = "ipopt-sys"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["Egor Larionov <egor.larionov@gmail.com>"]
 build = "build.rs"
 license = "Apache-2.0"
