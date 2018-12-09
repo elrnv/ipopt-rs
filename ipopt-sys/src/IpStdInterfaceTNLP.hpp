@@ -67,7 +67,12 @@ namespace Ipopt
     //@}
 
     /// Allow the user to set the user data pointer after the problem has already been created.
+    /// This must be set before calling any of the user specified callbacks.
     void set_user_data(UserDataPtr user_data);
+
+    void init_solution();
+
+    void preallocate_solution_data(Index n, Index m);
 
     /**@name methods to gather information about the NLP. These methods are
      * overloaded from TNLP. See TNLP for their more detailed documentation. */

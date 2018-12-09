@@ -257,6 +257,13 @@ extern "C"
   );
 
   /**
+   * Initialize the solution vectors in the nlp. Calling this is required before calling
+   * GetSolverData. This function will call the necessary initialization callbacks provided by the
+   * user.
+   */
+  IPOPT_EXPORT(void) InitSolution(IpoptProblem ipopt_problem, UserDataPtr user_data);
+
+  /**
    * Retrieve solver data which can be modified between solves for warm starts.
    */
   IPOPT_EXPORT(struct SolverData) GetSolverData(

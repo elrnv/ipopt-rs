@@ -211,7 +211,7 @@ impl ConstrainedProblem for NLP {
     }
 
     fn initial_constraint_multipliers(&self, lambda: &mut [Number]) {
-        if lambda.len() == 2 {
+        if self.lambda_start.len() == 2 {
             lambda.copy_from_slice(&self.lambda_start);
         }
     }

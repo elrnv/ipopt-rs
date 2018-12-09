@@ -490,6 +490,27 @@ impl<P: BasicProblem + std::fmt::Debug> std::fmt::Debug for Ipopt<P> {
 unsafe impl<P: BasicProblem> Send for Ipopt<P> {}
 
 impl<P: BasicProblem> Ipopt<P> {
+    /// Common implementation for constructing an Ipopt struct. This involves some unsafe code that
+    /// should be isolated for easier maintenance and debugging.
+    fn new_impl(nlp_internal: ffi::IpoptProblem, nlp: P, num_vars: usize, num_constraints: usize) -> Ipopt<P> {
+        let mut ipopt = Ipopt {
+            nlp_internal,
+            nlp_interface: nlp,
+            intermediate_callback: None,
+            // These two will be updated every time sizes callback is called.
+            num_primal_variables: num_vars, 
+            num_dual_variables: num_constraints,
+        };
+
+        // Initialize solution arrays so we can safely call solver_data and solver_data_mut without
+        // addressing unallocated memory.
+        unsafe {
+            ffi::InitSolution(ipopt.nlp_internal, &mut ipopt as *mut Ipopt<P> as *mut std::ffi::c_void);
+        }
+
+        ipopt
+    }
+
     /// Create a new unconstrained non-linear problem.
     pub fn new_unconstrained(nlp: P) -> Result<Self, CreateError> {
         let num_vars = nlp.num_variables();
@@ -526,14 +547,8 @@ impl<P: BasicProblem> Ipopt<P> {
             "hessian_approximation",
             "limited-memory"
         ));
-        Ok(Ipopt {
-            nlp_internal,
-            nlp_interface: nlp,
-            intermediate_callback: None,
-            // These two will be updated every time sizes callback is called.
-            num_primal_variables: num_vars, 
-            num_dual_variables: 0,
-        })
+
+        Ok(Self::new_impl(nlp_internal, nlp, num_vars, 0))
     }
 
     /// Helper static function that can be used in the constructor.
@@ -894,13 +909,7 @@ impl<P: NewtonProblem> Ipopt<P> {
             return Err(create_error.into());
         }
 
-        Ok(Ipopt {
-            nlp_internal,
-            nlp_interface: nlp,
-            intermediate_callback: None,
-            num_primal_variables: num_vars,
-            num_dual_variables: 0,
-        })
+        Ok(Self::new_impl(nlp_internal, nlp, num_vars, 0))
     }
 
     /**
@@ -1004,13 +1013,7 @@ impl<P: ConstrainedProblem> Ipopt<P> {
             return Err(create_error.into());
         }
 
-        Ok(Ipopt {
-            nlp_internal,
-            nlp_interface: nlp,
-            intermediate_callback: None,
-            num_primal_variables: num_vars,
-            num_dual_variables: num_constraints,
-        })
+        Ok(Self::new_impl(nlp_internal, nlp, num_vars, num_constraints))
     }
 
     /**
@@ -1588,5 +1591,42 @@ mod tests {
             Ipopt::new(nlp4).unwrap_err(),
             CreateError::InvalidConstraintJacobian
         );
+    }
+
+    /// Test validity of solver data before the first solve.
+    /// Here we ensure that the necessary arrays are allocated at the time of creation.
+    #[test]
+    fn no_solve_validity_test() {
+        // Initialize a valid nlp.
+        let nlp = NlpConstrained {
+            num_vars: 4,
+            num_constraints: 2,
+            num_constraint_jac_nnz: 8,
+            num_hess_nnz: 10,
+            constraint_lower: vec![25.0, 40.0],
+            constraint_upper: vec![2.0e19, 40.0],
+            init_point: vec![1.0, 5.0, 5.0, 1.0],
+            lower: vec![1.0; 4],
+            upper: vec![5.0; 4],
+        };
+
+        let solver = Ipopt::new(nlp.clone()).expect("Failed to create Ipopt solver");
+        let SolverData {
+            solution: Solution {
+                primal_variables,
+                constraint_multipliers,
+                lower_bound_multipliers,
+                upper_bound_multipliers,
+            },
+            ..
+        } = solver.solver_data();
+
+        // We expect that the solver data is initialized to what is provided by the initial_*
+        // functions.  Although they will be called again during the actual solve, the data
+        // returned by solver_data must always be valid.
+        assert_eq!(primal_variables, nlp.init_point.as_slice());
+        assert_eq!(constraint_multipliers, vec![0.0; 2].as_slice());
+        assert_eq!(lower_bound_multipliers, vec![0.0; 4].as_slice());
+        assert_eq!(upper_bound_multipliers, vec![0.0; 4].as_slice());
     }
 }

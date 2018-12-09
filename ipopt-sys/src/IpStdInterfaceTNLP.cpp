@@ -61,6 +61,19 @@ namespace Ipopt
                      "No callback function for evaluating the Hessian of the constraints provided.");
   }
 
+  void StdInterfaceTNLP::init_solution() {
+    DBG_ASSERT(user_data_ != nullptr && "User data has not been set prior to calling user specified callbacks.");
+
+    // Preallocate solution arrays.
+    Index n, m;
+    Index nnz_jac_g, nnz_h_lag; // not used
+    Bool retval = (*sizes_)(&n, &m, &nnz_jac_g, &nnz_h_lag, user_data_);
+    preallocate_solution_data(n, m);
+
+    // Populate solution arrays with initial guess data.
+    get_starting_point(n, true, x_sol_.data(), true, z_L_sol_.data(), z_U_sol_.data(), m, true, lambda_sol_.data());
+  }
+
   SolverData StdInterfaceTNLP::get_solution_arguments() {
     SolverData data;
     data.x = x_sol_.data();
@@ -84,16 +97,19 @@ namespace Ipopt
       this->user_data_ = user_data;
   }
 
-  bool StdInterfaceTNLP::get_nlp_info(Index& n, Index& m, Index& nnz_jac_g,
-                                      Index& nnz_h_lag, IndexStyleEnum& index_style)
-  {
-    Bool retval = (*sizes_)(&n, &m, &nnz_jac_g, &nnz_h_lag, user_data_);
-
+  void StdInterfaceTNLP::preallocate_solution_data(Index n, Index m) {
     x_sol_.resize(static_cast<std::size_t>(n), 0.0);
     z_L_sol_.resize(static_cast<std::size_t>(n), 0.0);
     z_U_sol_.resize(static_cast<std::size_t>(n), 0.0);
     g_sol_.resize(static_cast<std::size_t>(m), 0.0);
     lambda_sol_.resize(static_cast<std::size_t>(m), 0.0);
+  }
+
+  bool StdInterfaceTNLP::get_nlp_info(Index& n, Index& m, Index& nnz_jac_g,
+                                      Index& nnz_h_lag, IndexStyleEnum& index_style)
+  {
+    Bool retval = (*sizes_)(&n, &m, &nnz_jac_g, &nnz_h_lag, user_data_);
+    preallocate_solution_data(n, m);
 
     index_style = (index_style_ == 0) ? C_STYLE : FORTRAN_STYLE;
 

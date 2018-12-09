@@ -183,6 +183,11 @@ SolveResult IpoptSolve(IpoptProblem ipopt_problem, UserDataPtr user_data)
   return res;
 }
 
+void InitSolution(IpoptProblem ipopt_problem, UserDataPtr user_data) {
+  ipopt_problem->nlp->set_user_data(user_data);
+  ipopt_problem->nlp->init_solution();
+}
+
 SolverData GetSolverData(IpoptProblem ipopt_problem)
 {
   return ipopt_problem->nlp->get_solution_arguments();
