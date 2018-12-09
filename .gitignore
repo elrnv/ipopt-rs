@@ -3,3 +3,4 @@
 ipopt-sys/target/
 **/*.rs.bk
 Cargo.lock
+.vscode
