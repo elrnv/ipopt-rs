@@ -18,6 +18,7 @@ include!(concat!(env!("OUT_DIR"), "/IpStdCInterface.rs"));
 
 #[cfg(test)]
 mod tests {
+    use approx::*;
     use super::*;
     use std::slice;
     use std::ffi::CString;
@@ -32,7 +33,7 @@ mod tests {
     #[test]
     fn hs071_test() {
         // rough comparator
-        let approx_eq = |a: f64, b: f64| assert!((a-b).abs() < 1e-5, format!("{} vs. {}", a, b));
+        let approx_eq = |a: f64, b: f64| assert_relative_eq!(a, b, max_relative = 1e-6, epsilon = 1e-14);
 
         let mut nlp: IpoptProblem = ::std::ptr::null_mut();
         let create_status = unsafe {
@@ -160,10 +161,10 @@ mod tests {
         approx_eq(mult_x_L[0], 1.090362e+00);
         approx_eq(mult_x_L[1], 2.664877e-12);
         approx_eq(mult_x_L[2], 3.556758e-12);
-        approx_eq(mult_x_L[3], 2.693832e-11);
+        approx_eq(mult_x_L[3], 2.718148e-11);
         approx_eq(mult_x_U[0], 2.498100e-12);
-        approx_eq(mult_x_U[1], 4.074104e-11);
-        approx_eq(mult_x_U[2], 8.423997e-12);
+        approx_eq(mult_x_U[1], 4.013263e-11);
+        approx_eq(mult_x_U[2], 8.455630e-12);
         approx_eq(mult_x_U[3], 2.755724e-12);
 
         approx_eq(sol.obj_val, 1.690362e+01);

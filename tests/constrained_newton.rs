@@ -18,10 +18,16 @@ use ipopt::*;
 
 struct NLP {
     g_offset: [f64; 2],
+    iterations: usize,
 }
 impl NLP {
     fn intermediate_cb(&mut self, data: IntermediateCallbackData) -> bool {
+        self.count_iterations_cb(data);
         data.inf_pr >= 1e-4
+    }
+    fn count_iterations_cb(&mut self, data: IntermediateCallbackData) -> bool {
+        self.iterations = data.iter_count as usize;
+        true
     }
 }
 
@@ -47,6 +53,19 @@ impl BasicProblem for NLP {
         grad_f[2] = x[0] * x[3] + 1.0;
         grad_f[3] = x[0] * (x[0] + x[1] + x[2]);
         true
+    }
+
+    // The following two callbacks are activated only when `nlp_scaling_method` is set to
+    // `user-scaling`.
+    fn variable_scaling(&self, x_scaling: &mut [Number]) -> bool {
+        for s in x_scaling.iter_mut() {
+            *s = 0.0001;
+        }
+        true
+    }
+
+    fn objective_scaling(&self) -> f64 {
+        1000.0
     }
 }
 
@@ -155,55 +174,93 @@ impl ConstrainedProblem for NLP {
         vals[9] += lambda[1] * 2.0; /* 3,3 */
         true
     }
+
+    // The following callback is activated only when `nlp_scaling_method` is set to
+    // `user-scaling`.
+    fn constraint_scaling(&self, g_scaling: &mut [Number]) -> bool {
+        for s in g_scaling.iter_mut() {
+            *s = 0.0001;
+        }
+        true
+    }
 }
 
-#[test]
-fn hs071_test() {
+fn hs071() -> Ipopt<NLP> {
     let nlp = NLP {
         g_offset: [0.0, 0.0],
+        iterations: 0,
     };
     let mut ipopt = Ipopt::new(nlp).unwrap();
     ipopt.set_option("tol", 1e-7);
     ipopt.set_option("mu_strategy", "adaptive");
     ipopt.set_option("sb", "yes"); // suppress license message
     ipopt.set_option("print_level", 0); // suppress debug output
+    ipopt
+}
+
+#[test]
+fn hs071_test() {
+    let mut ipopt = hs071();
+    ipopt.set_intermediate_callback(Some(NLP::intermediate_cb));
+
+    // Solve
+    let SolveResult {
+        solver_data:
+            SolverDataMut {
+                solution: Solution {
+                    primal_variables: x,
+                    constraint_multipliers: mult_g,
+                    lower_bound_multipliers: mult_x_l,
+                    upper_bound_multipliers: mult_x_u,
+                },
+                ..
+            },
+        status,
+        objective_value: obj,
+        ..
+    } = ipopt.solve();
+
+    // Check result
+    assert_eq!(status, SolveStatus::UserRequestedStop);
+    assert_relative_eq!(x[0], 1.000000e+00, max_relative = 1e-6, epsilon = 1e-14);
+    assert_relative_eq!(x[1], 4.743000e+00, max_relative = 1e-6, epsilon = 1e-14);
+    assert_relative_eq!(x[2], 3.821150e+00, max_relative = 1e-6, epsilon = 1e-14);
+    assert_relative_eq!(x[3], 1.379408e+00, max_relative = 1e-6, epsilon = 1e-14);
+
+    assert_relative_eq!(mult_g[0], -5.522936e-01, max_relative = 1e-6, epsilon = 1e-14);
+    assert_relative_eq!(mult_g[1], 1.614685e-01,  max_relative = 1e-6, epsilon = 1e-14);
+
+    assert_relative_eq!(mult_x_l[0], 1.087872e+00, max_relative = 1e-6, epsilon = 1e-14);
+    assert_relative_eq!(mult_x_l[1], 4.635819e-09, max_relative = 1e-6, epsilon = 1e-14);
+    assert_relative_eq!(mult_x_l[2], 9.087447e-09, max_relative = 1e-6, epsilon = 1e-14);
+    assert_relative_eq!(mult_x_l[3], 8.555955e-09, max_relative = 1e-6, epsilon = 1e-14);
+    assert_relative_eq!(mult_x_u[0], 4.470027e-09, max_relative = 1e-6, epsilon = 1e-14);
+    assert_relative_eq!(mult_x_u[1], 4.075231e-07, max_relative = 1e-6, epsilon = 1e-14);
+    assert_relative_eq!(mult_x_u[2], 1.189791e-08, max_relative = 1e-6, epsilon = 1e-14);
+    assert_relative_eq!(mult_x_u[3], 6.398749e-09, max_relative = 1e-6, epsilon = 1e-14);
+
+    assert_relative_eq!(obj, 1.701402e+01, max_relative = 1e-6, epsilon = 1e-14);
+}
+
+#[test]
+fn hs071_warm_start_test() {
+    let mut ipopt = hs071();
     ipopt.set_intermediate_callback(Some(NLP::intermediate_cb));
     {
         let SolveResult {
             solver_data:
                 SolverDataMut {
                     problem,
-                    solution: Solution {
-                        primal_variables: x,
-                        constraint_multipliers: mult_g,
-                        lower_bound_multipliers: mult_x_l,
-                        upper_bound_multipliers: mult_x_u,
-                    }
+                    ..
                 },
             status,
-            objective_value: obj,
             ..
         } = ipopt.solve();
 
         assert_eq!(status, SolveStatus::UserRequestedStop);
-        assert_relative_eq!(x[0], 1.000000e+00, epsilon = 1e-5);
-        assert_relative_eq!(x[1], 4.743000e+00, epsilon = 1e-5);
-        assert_relative_eq!(x[2], 3.821150e+00, epsilon = 1e-5);
-        assert_relative_eq!(x[3], 1.379408e+00, epsilon = 1e-5);
+        assert_eq!(problem.iterations, 7);
 
-        assert_relative_eq!(mult_g[0], -5.522936e-01, epsilon = 1e-5);
-        assert_relative_eq!(mult_g[1], 1.614685e-01, epsilon = 1e-5);
-
-        assert_relative_eq!(mult_x_l[0], 1.087872e+00, epsilon = 1e-5);
-        assert_relative_eq!(mult_x_l[1], 4.635819e-09, epsilon = 1e-5);
-        assert_relative_eq!(mult_x_l[2], 9.087447e-09, epsilon = 1e-5);
-        assert_relative_eq!(mult_x_l[3], 8.555955e-09, epsilon = 1e-5);
-        assert_relative_eq!(mult_x_u[0], 4.470027e-09, epsilon = 1e-5);
-        assert_relative_eq!(mult_x_u[1], 4.075231e-07, epsilon = 1e-5);
-        assert_relative_eq!(mult_x_u[2], 1.189791e-08, epsilon = 1e-5);
-        assert_relative_eq!(mult_x_u[3], 6.398749e-09, epsilon = 1e-5);
-
-        assert_relative_eq!(obj, 1.701402e+01, epsilon = 1e-5);
+        // The results from this tests are checked in the hs071_test.
 
         problem.g_offset[0] = 0.2;
     }
@@ -211,7 +268,7 @@ fn hs071_test() {
     ipopt.set_option("warm_start_init_point", "yes");
     ipopt.set_option("bound_push", 1e-5);
     ipopt.set_option("bound_frac", 1e-5);
-    ipopt.set_intermediate_callback(None);
+    ipopt.set_intermediate_callback(Some(NLP::count_iterations_cb));
     {
         let SolveResult {
             solver_data:
@@ -230,36 +287,92 @@ fn hs071_test() {
         } = ipopt.solve();
 
         assert_eq!(status, SolveStatus::SolveSucceeded);
-        assert_relative_eq!(x[0], 1.000000e+00, epsilon = 1e-5);
-        assert_relative_eq!(x[1], 4.749269e+00, epsilon = 1e-5);
-        assert_relative_eq!(x[2], 3.817510e+00, epsilon = 1e-5);
-        assert_relative_eq!(x[3], 1.367870e+00, epsilon = 1e-5);
+        assert_eq!(problem.iterations, 9);
+        assert_relative_eq!(x[0], 1.000000e+00, max_relative = 1e-6, epsilon = 1e-14);
+        assert_relative_eq!(x[1], 4.749269e+00, max_relative = 1e-6, epsilon = 1e-14);
+        assert_relative_eq!(x[2], 3.817510e+00, max_relative = 1e-6, epsilon = 1e-14);
+        assert_relative_eq!(x[3], 1.367870e+00, max_relative = 1e-6, epsilon = 1e-14);
 
-        assert_relative_eq!(mult_g[0], -5.517016e-01, epsilon = 1e-5);
-        assert_relative_eq!(mult_g[1], 1.592915e-01, epsilon = 1e-5);
+        assert_relative_eq!(mult_g[0], -5.517016e-01, max_relative = 1e-6, epsilon = 1e-14);
+        assert_relative_eq!(mult_g[1], 1.592915e-01,  max_relative = 1e-6, epsilon = 1e-14);
 
-        assert_relative_eq!(mult_x_l[0], 1.090362e+00, epsilon = 1e-5);
-        assert_relative_eq!(mult_x_l[1], 2.664877e-12, epsilon = 1e-5);
-        assert_relative_eq!(mult_x_l[2], 3.556758e-12, epsilon = 1e-5);
-        assert_relative_eq!(mult_x_l[3], 2.693832e-11, epsilon = 1e-5);
-        assert_relative_eq!(mult_x_u[0], 2.498100e-12, epsilon = 1e-5);
-        assert_relative_eq!(mult_x_u[1], 4.074104e-11, epsilon = 1e-5);
-        assert_relative_eq!(mult_x_u[2], 8.423997e-12, epsilon = 1e-5);
-        assert_relative_eq!(mult_x_u[3], 2.755724e-12, epsilon = 1e-5);
+        assert_relative_eq!(mult_x_l[0], 1.090362e+00, max_relative = 1e-6, epsilon = 1e-14);
+        assert_relative_eq!(mult_x_l[1], 0.0, max_relative = 1e-6, epsilon = 1e-10);
+        assert_relative_eq!(mult_x_l[2], 0.0, max_relative = 1e-6, epsilon = 1e-10);
+        assert_relative_eq!(mult_x_l[3], 0.0, max_relative = 1e-6, epsilon = 1e-10);
+        assert_relative_eq!(mult_x_u[0], 0.0, max_relative = 1e-6, epsilon = 1e-10);
+        assert_relative_eq!(mult_x_u[1], 0.0, max_relative = 1e-6, epsilon = 1e-10);
+        assert_relative_eq!(mult_x_u[2], 0.0, max_relative = 1e-6, epsilon = 1e-10);
+        assert_relative_eq!(mult_x_u[3], 0.0, max_relative = 1e-6, epsilon = 1e-10);
 
-        assert_relative_eq!(obj, 1.690362e+01, epsilon = 1e-5);
+        assert_relative_eq!(obj, 1.690362e+01, max_relative = 1e-6, epsilon = 1e-14);
         problem.g_offset[0] = 0.1;
     }
 
     // Solve one more time time
     {
         let SolveResult {
+            solver_data: SolverDataMut {
+                problem,
+                ..
+            },
             status,
             objective_value: obj,
             ..
         } = ipopt.solve();
 
         assert_eq!(status, SolveStatus::SolveSucceeded);
+        assert_eq!(problem.iterations, 9);
         assert_relative_eq!(obj, 1.695880e+01, epsilon = 1e-5);
     }
+}
+
+#[test]
+fn hs071_custom_scaling_test() {
+    let mut ipopt = hs071();
+    ipopt.solver_data_mut().problem.g_offset[0] = 0.2;
+
+    ipopt.set_option("nlp_scaling_method", "user-scaling");
+    ipopt.set_intermediate_callback(Some(NLP::count_iterations_cb));
+
+    let SolveResult {
+        solver_data:
+            SolverDataMut {
+                problem,
+                solution: Solution {
+                    primal_variables: x,
+                    constraint_multipliers: mult_g,
+                    lower_bound_multipliers: mult_x_l,
+                    upper_bound_multipliers: mult_x_u,
+                },
+            },
+        status,
+        objective_value: obj,
+        ..
+    } = ipopt.solve();
+
+    // There is no explicit way to tell if things have been scaled other than looking at the
+    // output, however we can check that the number of iterations has changed, and it still
+    // converges given all other parameters are the same. This indicates that at least some of our
+    // scaling functions are actually being called.
+    assert_eq!(status, SolveStatus::SolveSucceeded);
+    assert_eq!(problem.iterations, 22);
+    assert_relative_eq!(x[0], 1.000000e+00, max_relative = 1e-6, epsilon = 1e-14);
+    assert_relative_eq!(x[1], 4.749269e+00, max_relative = 1e-6, epsilon = 1e-14);
+    assert_relative_eq!(x[2], 3.817510e+00, max_relative = 1e-6, epsilon = 1e-14);
+    assert_relative_eq!(x[3], 1.367870e+00, max_relative = 1e-6, epsilon = 1e-14);
+
+    assert_relative_eq!(mult_g[0], -5.517016e-01, max_relative = 1e-6, epsilon = 1e-14);
+    assert_relative_eq!(mult_g[1], 1.592915e-01,  max_relative = 1e-6, epsilon = 1e-14);
+
+    assert_relative_eq!(mult_x_l[0], 1.090362e+00, max_relative = 1e-6, epsilon = 1e-14);
+    assert_relative_eq!(mult_x_l[1], 0.0, max_relative = 1e-6, epsilon = 1e-10);
+    assert_relative_eq!(mult_x_l[2], 0.0, max_relative = 1e-6, epsilon = 1e-10);
+    assert_relative_eq!(mult_x_l[3], 0.0, max_relative = 1e-6, epsilon = 1e-10);
+    assert_relative_eq!(mult_x_u[0], 0.0, max_relative = 1e-6, epsilon = 1e-10);
+    assert_relative_eq!(mult_x_u[1], 0.0, max_relative = 1e-6, epsilon = 1e-10);
+    assert_relative_eq!(mult_x_u[2], 0.0, max_relative = 1e-6, epsilon = 1e-10);
+    assert_relative_eq!(mult_x_u[3], 0.0, max_relative = 1e-6, epsilon = 1e-10);
+
+    assert_relative_eq!(obj, 1.690362e+01, max_relative = 1e-6, epsilon = 1e-14);
 }

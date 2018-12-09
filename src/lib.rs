@@ -173,9 +173,34 @@ pub trait BasicProblem {
     /// Objective function. This is the function being minimized.
     /// This function is internally called by Ipopt callback `eval_f`.
     fn objective(&self, x: &[Number], obj: &mut Number) -> bool;
+
     /// Gradient of the objective function.
     /// This function is internally called by Ipopt callback `eval_grad_f`.
     fn objective_grad(&self, x: &[Number], grad_f: &mut [Number]) -> bool;
+
+    /// Provide custom variable scaling.
+    /// This method is called if the Ipopt option, `nlp_scaling_method`, is set to `user-scaling`.
+    /// Return `true` if scaling is provided and `false` otherwise: if `false` is returned, Ipopt
+    /// will not scale the variables.
+    ///
+    /// The dimension of `x_scaling` is given by `num_variables`.
+    ///
+    /// For convenience, this function returns `false` by default without modifying the `x_scaling`
+    /// slice.
+    fn variable_scaling(&self, _x_scaling: &mut [Number]) -> bool {
+        false
+    }
+
+    /// Provide custom scaling for the objective function.
+    /// This method is called if the Ipopt option, `nlp_scaling_method`, is set to `user-scaling`.
+    /// For example if this function returns `10`, then then Ipopt solves internally an optimization
+    /// problem that has 10 times the value of the original objective function. If this function
+    /// returns `-1.0`, then Ipopt will maximize the objective instead of minimizing it.
+    ///
+    /// For convenience, this function returns `1.0` by default.
+    fn objective_scaling(&self) -> f64 {
+        1.0
+    }
 }
 
 /// An extension to the `BasicProblem` trait that enables full Newton iterations in
@@ -262,6 +287,20 @@ pub trait ConstrainedProblem: BasicProblem {
         lambda: &[Number],
         vals: &mut [Number],
     ) -> bool;
+
+    /// Provide custom constraint function scaling.
+    /// This method is called if the Ipopt option, `nlp_scaling_method`, is set to `user-scaling`.
+    /// Return `true` if scaling is provided and `false` otherwise: if `false` is returned, Ipopt
+    /// will not scale the constraint function.
+    ///
+    /// `g_scaling` has the same dimensions as the constraint function: the value returned by
+    /// `num_constraints`.
+    ///
+    /// For convenience, this function returns `false` by default without modifying the `g_scaling`
+    /// slice.
+    fn constraint_scaling(&self, _g_scaling: &mut [Number]) -> bool {
+        false
+    }
 }
 
 /// Type of option you can specify to Ipopt.
@@ -481,7 +520,7 @@ impl<P: BasicProblem> Ipopt<P> {
                 Some(Self::eval_grad_f),
                 Some(Self::eval_jac_g_none),
                 Some(Self::eval_h_none),
-                None // scaling callback
+                Some(Self::basic_scaling),
             )
         });
 
@@ -767,6 +806,27 @@ impl<P: BasicProblem> Ipopt<P> {
         false as Bool
     }
 
+    /// Specify custom scaling parameters. This function is called by Ipopt when
+    /// `nlp_scaling_method` is set to `user-scaling`.
+    /// Basic problems have no constraint scaling.
+    unsafe extern "C" fn basic_scaling(
+        obj_scaling: *mut Number,
+        use_x_scaling: *mut Bool,
+        n: Index,
+        x_scaling: *mut Number,
+        use_g_scaling: *mut Bool,
+        m: Index,
+        _g_scaling: *mut Number,
+        user_data: ffi::UserDataPtr,
+    ) -> Bool {
+        assert_eq!(m, 0);
+        let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
+        *obj_scaling = nlp.objective_scaling();
+        *use_x_scaling = nlp.variable_scaling(slice::from_raw_parts_mut(x_scaling, n as usize)) as Bool;
+        *use_g_scaling = false as Bool;
+        true as Bool
+    }
+
     /// Intermediate callback.
     unsafe extern "C" fn intermediate_cb(
         alg_mod: Index,
@@ -833,7 +893,7 @@ impl<P: NewtonProblem> Ipopt<P> {
                 Some(Self::eval_grad_f),
                 Some(Self::eval_jac_g_none),
                 Some(Self::eval_h),
-                None
+                Some(Self::basic_scaling),
             )
         });
 
@@ -943,7 +1003,7 @@ impl<P: ConstrainedProblem> Ipopt<P> {
                 Some(Self::eval_grad_f),
                 Some(Self::eval_jac_g),
                 Some(Self::eval_full_h),
-                None
+                Some(Self::scaling),
             )
         });
 
@@ -1109,6 +1169,25 @@ impl<P: ConstrainedProblem> Ipopt<P> {
                 slice::from_raw_parts_mut(values, nele_hess as usize),
             ) as Bool
         }
+    }
+
+    /// Specify custom scaling parameters. This function is called by Ipopt when
+    /// `nlp_scaling_method` is set to `user-scaling`.
+    unsafe extern "C" fn scaling(
+        obj_scaling: *mut Number,
+        use_x_scaling: *mut Bool,
+        n: Index,
+        x_scaling: *mut Number,
+        use_g_scaling: *mut Bool,
+        m: Index,
+        g_scaling: *mut Number,
+        user_data: ffi::UserDataPtr,
+    ) -> Bool {
+        let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
+        *obj_scaling = nlp.objective_scaling();
+        *use_x_scaling = nlp.variable_scaling(slice::from_raw_parts_mut(x_scaling, n as usize)) as Bool;
+        *use_g_scaling = nlp.constraint_scaling(slice::from_raw_parts_mut(g_scaling, m as usize)) as Bool;
+        true as Bool
     }
 }
 
