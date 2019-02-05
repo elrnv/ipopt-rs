@@ -18,7 +18,7 @@
  * step. In fact here we use Ipopt's implementation of hessian approximation, which is not quite a
  * second order method, although it should easily solve the quadratic problem in one step.
  */
-use approx::{__assert_approx, assert_relative_eq, relative_eq};
+use approx::assert_relative_eq;
 
 use ipopt::*;
 

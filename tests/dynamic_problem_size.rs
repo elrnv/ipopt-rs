@@ -18,7 +18,7 @@
  * changes, we can still use the solution from the previous solve for the new problem with a larger
  * problem size. This shows that warm starts can be very problem specific.
  */
-use approx::{__assert_approx, assert_relative_eq, relative_eq};
+use approx::assert_relative_eq;
 use std::cell::RefCell;
 
 use ipopt::*;

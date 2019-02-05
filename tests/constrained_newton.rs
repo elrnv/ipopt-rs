@@ -12,7 +12,7 @@
 //   See the License for the specific language governing permissions and
 //   limitations under the License.
 
-use approx::{__assert_approx, assert_relative_eq, relative_eq};
+use approx::assert_relative_eq;
 
 use ipopt::*;
 
