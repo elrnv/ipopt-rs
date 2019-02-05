@@ -14,7 +14,7 @@
 #![allow(non_upper_case_globals)]
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
-include!(concat!(env!("OUT_DIR"), "/IpStdCInterface.rs"));
+include!(concat!(env!("OUT_DIR"), "/ipopt_cnlp.rs"));
 
 #[cfg(test)]
 mod tests {
@@ -26,7 +26,7 @@ mod tests {
     /// A small structure used to store state between calls to Ipopt NLP callbacks.
     #[derive(Debug)]
     struct UserData {
-        g_offset: [Number; 2],
+        g_offset: [CNLP_Number; 2],
     }
     
     /// Test Ipopt raw bindings. This will also serve as an example of the raw C API.
@@ -35,11 +35,11 @@ mod tests {
         // rough comparator
         let approx_eq = |a: f64, b: f64| assert_relative_eq!(a, b, max_relative = 1e-6, epsilon = 1e-14);
 
-        let mut nlp: IpoptProblem = ::std::ptr::null_mut();
+        let mut nlp: CNLP_ProblemPtr = ::std::ptr::null_mut();
         let create_status = unsafe {
-            /* create the IpoptProblem */
-            CreateIpoptProblem(
-                &mut nlp as *mut IpoptProblem,
+            /* create the CNLP_Problem */
+            cnlp_create_problem(
+                &mut nlp as *mut CNLP_ProblemPtr,
                 0, 
                 Some(sizes),
                 Some(init),
@@ -52,7 +52,7 @@ mod tests {
                 None)
         };
 
-        assert_eq!(create_status, CreateProblemStatus_Success);
+        assert_eq!(create_status, CNLP_CreateProblemStatus_CNLP_SUCCESS);
 
         /* Set some options */
         let tol_str = CString::new("tol").unwrap();
@@ -63,11 +63,11 @@ mod tests {
         let yes_str = CString::new("yes").unwrap();
 
         unsafe {
-            AddIpoptIntOption(nlp, print_lvl_str.as_ptr(), 0);
-            AddIpoptNumOption(nlp, tol_str.as_ptr(), 1e-7);
-            AddIpoptStrOption(nlp, mu_strategy_str.as_ptr(), adaptive_str.as_ptr());
-            AddIpoptStrOption(nlp, sb_str.as_ptr(), yes_str.as_ptr());
-            SetIntermediateCallback(nlp, Some(intermediate_cb));
+            cnlp_add_int_option(nlp, print_lvl_str.as_ptr(), 0);
+            cnlp_add_num_option(nlp, tol_str.as_ptr(), 1e-7);
+            cnlp_add_str_option(nlp, mu_strategy_str.as_ptr(), adaptive_str.as_ptr());
+            cnlp_add_str_option(nlp, sb_str.as_ptr(), yes_str.as_ptr());
+            cnlp_set_intermediate_callback(nlp, Some(intermediate_cb));
         }
 
         let mut user_data = UserData { g_offset: [0.0, 0.0] };
@@ -75,13 +75,13 @@ mod tests {
 
         /* solve the problem */
         let sol = unsafe {
-            IpoptSolve(nlp,
-                       udata_ptr as UserDataPtr, // Pointer to user data. This will be passed unmodified
+            cnlp_solve(nlp,
+                       udata_ptr as CNLP_UserDataPtr, // Pointer to user data. This will be passed unmodified
                                                  // to the callback functions.
                        ) // Problem that is to be optimized.
         };
 
-        assert_eq!(sol.status, ApplicationReturnStatus_User_Requested_Stop);
+        assert_eq!(sol.status, CNLP_ApplicationReturnStatus_CNLP_USER_REQUESTED_STOP);
 
         let m = 2;
         let n = 4;
@@ -131,15 +131,15 @@ mod tests {
         let mut bound_frac_str = CString::new("bound_frac").unwrap();
 
         unsafe {
-            AddIpoptStrOption(nlp,
-                              (&mut warm_start_str).as_ptr() as *mut i8,
-                              (&mut yes_str).as_ptr() as *mut i8);
-            AddIpoptNumOption(nlp, (&mut bound_push_str).as_ptr() as *mut i8, 1e-5);
-            AddIpoptNumOption(nlp, (&mut bound_frac_str).as_ptr() as *mut i8, 1e-5);
-            SetIntermediateCallback(nlp, None);
+            cnlp_add_str_option(nlp,
+                                   (&mut warm_start_str).as_ptr() as *mut i8,
+                                   (&mut yes_str).as_ptr() as *mut i8);
+            cnlp_add_num_option(nlp, (&mut bound_push_str).as_ptr() as *mut i8, 1e-5);
+            cnlp_add_num_option(nlp, (&mut bound_frac_str).as_ptr() as *mut i8, 1e-5);
+            cnlp_set_intermediate_callback(nlp, None);
         }
 
-        let sol = unsafe { IpoptSolve( nlp, udata_ptr as UserDataPtr ) };
+        let sol = unsafe { cnlp_solve( nlp, udata_ptr as CNLP_UserDataPtr ) };
 
         // Write solutions back to our managed Vecs
         x.copy_from_slice(unsafe { slice::from_raw_parts(sol.data.x, n) });
@@ -148,7 +148,7 @@ mod tests {
         mult_x_L.copy_from_slice(unsafe { slice::from_raw_parts(sol.data.mult_x_L, n) });
         mult_x_U.copy_from_slice(unsafe { slice::from_raw_parts(sol.data.mult_x_U, n) });
 
-        assert_eq!(sol.status, ApplicationReturnStatus_Solve_Succeeded);
+        assert_eq!(sol.status, CNLP_ApplicationReturnStatus_CNLP_SOLVE_SUCCEEDED);
 
         approx_eq(x[0], 1.000000e+00);
         approx_eq(x[1], 4.749269e+00);
@@ -170,35 +170,35 @@ mod tests {
         approx_eq(sol.obj_val, 1.690362e+01);
 
         /* free allocated memory */
-        unsafe { FreeIpoptProblem(nlp); }
+        unsafe { cnlp_free_problem(nlp); }
     }
 
     /* Function Implementations */
     unsafe extern "C" fn sizes(
-        n: *mut Index,
-        m: *mut Index,
-        nnz_jac_g: *mut Index,
-        nnz_h_lag: *mut Index,
-        _user_data: UserDataPtr) -> Bool
+        n: *mut CNLP_Index,
+        m: *mut CNLP_Index,
+        nnz_jac_g: *mut CNLP_Index,
+        nnz_h_lag: *mut CNLP_Index,
+        _user_data: CNLP_UserDataPtr) -> CNLP_Bool
     {
-        *n = 4; // Number of variables
-        *m = 2; // Number of constraints
-        *nnz_jac_g = 8; // Number of jacobian non-zeros
-        *nnz_h_lag = 10; // Number of hessian non-zeros
-        true as Bool
+        *n = 4; // CNLP_Number of variables
+        *m = 2; // CNLP_Number of constraints
+        *nnz_jac_g = 8; // CNLP_Number of jacobian non-zeros
+        *nnz_h_lag = 10; // CNLP_Number of hessian non-zeros
+        true as CNLP_Bool
     }
 
     unsafe extern "C" fn init(
-        n: Index,
-        init_x: Bool,
-        x: *mut Number,
-        init_z: Bool,
-        z_L: *mut Number,
-        z_U: *mut Number,
-        m: Index,
-        init_lambda: Bool,
-        lambda: *mut Number,
-        _user_data: UserDataPtr) -> Bool
+        n: CNLP_Index,
+        init_x: CNLP_Bool,
+        x: *mut CNLP_Number,
+        init_z: CNLP_Bool,
+        z_L: *mut CNLP_Number,
+        z_U: *mut CNLP_Number,
+        m: CNLP_Index,
+        init_lambda: CNLP_Bool,
+        lambda: *mut CNLP_Number,
+        _user_data: CNLP_UserDataPtr) -> CNLP_Bool
     {
         assert_eq!(n, 4);
         assert_eq!(m, 2);
@@ -220,17 +220,17 @@ mod tests {
             *lambda.offset(0) = 0.0;
             *lambda.offset(1) = 0.0;
         }
-        true as Bool
+        true as CNLP_Bool
     }
 
     unsafe extern "C" fn bounds(
-        n: Index,
-        x_l: *mut Number,
-        x_u: *mut Number,
-        m: Index,
-        g_l: *mut Number,
-        g_u: *mut Number,
-        _user_data: UserDataPtr) -> Bool {
+        n: CNLP_Index,
+        x_l: *mut CNLP_Number,
+        x_u: *mut CNLP_Number,
+        m: CNLP_Index,
+        g_l: *mut CNLP_Number,
+        g_u: *mut CNLP_Number,
+        _user_data: CNLP_UserDataPtr) -> CNLP_Bool {
       assert!(n == 4);
       assert!(m == 2);
 
@@ -246,29 +246,29 @@ mod tests {
           *x_u.offset(i) = 5.0;
       }
 
-      true as Bool
+      true as CNLP_Bool
     }
 
     unsafe extern "C" fn eval_f(
-        n: Index,
-        x: *const Number,
-        _new_x: Bool,
-        obj_value: *mut Number,
-        _user_data: UserDataPtr) -> Bool {
+        n: CNLP_Index,
+        x: *const CNLP_Number,
+        _new_x: CNLP_Bool,
+        obj_value: *mut CNLP_Number,
+        _user_data: CNLP_UserDataPtr) -> CNLP_Bool {
       assert!(n == 4);
 
       *obj_value = *x.offset(0) * *x.offset(3)
           * (*x.offset(0) + *x.offset(1) + *x.offset(2)) + *x.offset(2);
 
-      true as Bool
+      true as CNLP_Bool
     }
 
     unsafe extern "C" fn eval_grad_f(
-        n: Index,
-        x: *const Number,
-        _new_x: Bool,
-        grad_f: *mut Number,
-        _user_data: UserDataPtr) -> Bool {
+        n: CNLP_Index,
+        x: *const CNLP_Number,
+        _new_x: CNLP_Bool,
+        grad_f: *mut CNLP_Number,
+        _user_data: CNLP_UserDataPtr) -> CNLP_Bool {
       assert!(n == 4);
 
       *grad_f.offset(0) = *x.offset(0) * *x.offset(3)
@@ -277,16 +277,16 @@ mod tests {
       *grad_f.offset(2) = *x.offset(0) * *x.offset(3) + 1.0;
       *grad_f.offset(3) = *x.offset(0) * (*x.offset(0) + *x.offset(1) + *x.offset(2));
 
-      true as Bool
+      true as CNLP_Bool
     }
 
     unsafe extern "C" fn eval_g(
-        n: Index,
-        x: *const Number,
-        _new_x: Bool,
-        m: Index,
-        g: *mut Number,
-        user_data_ptr: UserDataPtr) -> Bool {
+        n: CNLP_Index,
+        x: *const CNLP_Number,
+        _new_x: CNLP_Bool,
+        m: CNLP_Index,
+        g: *mut CNLP_Number,
+        user_data_ptr: CNLP_UserDataPtr) -> CNLP_Bool {
       //struct MyUserData* my_data = user_data;
 
       assert!(n == 4);
@@ -299,19 +299,19 @@ mod tests {
           + *x.offset(2) * *x.offset(2)
           + *x.offset(3) * *x.offset(3) + user_data.g_offset[1];
 
-      true as Bool
+      true as CNLP_Bool
     }
 
     unsafe extern "C" fn eval_jac_g(
-        _n: Index,
-        x: *const Number,
-        _new_x: Bool,
-        _m: Index,
-        _nele_jac: Index,
-        iRow: *mut Index,
-        jCol: *mut Index,
-        values: *mut Number,
-        _user_data: UserDataPtr) -> Bool {
+        _n: CNLP_Index,
+        x: *const CNLP_Number,
+        _new_x: CNLP_Bool,
+        _m: CNLP_Index,
+        _nele_jac: CNLP_Index,
+        iRow: *mut CNLP_Index,
+        jCol: *mut CNLP_Index,
+        values: *mut CNLP_Number,
+        _user_data: CNLP_UserDataPtr) -> CNLP_Bool {
       if values.is_null() {
         /* return the structure of the jacobian */
 
@@ -347,22 +347,22 @@ mod tests {
         *values.offset(7) = 2.0 * *x.offset(3);         /* 1,3 */
       }
 
-     true as Bool 
+     true as CNLP_Bool 
     }
 
     unsafe extern "C" fn eval_h(
-        _n: Index,
-        x: *const Number,
-        _new_x: Bool,
-        obj_factor: Number,
-        _m: Index,
-        lambda: *const Number,
-        _new_lambda: Bool,
-        nele_hess: Index,
-        iRow: *mut Index,
-        jCol: *mut Index,
-        values: *mut Number,
-        _user_data: UserDataPtr) -> Bool {
+        _n: CNLP_Index,
+        x: *const CNLP_Number,
+        _new_x: CNLP_Bool,
+        obj_factor: CNLP_Number,
+        _m: CNLP_Index,
+        lambda: *const CNLP_Number,
+        _new_lambda: CNLP_Bool,
+        nele_hess: CNLP_Index,
+        iRow: *mut CNLP_Index,
+        jCol: *mut CNLP_Index,
+        values: *mut CNLP_Number,
+        _user_data: CNLP_UserDataPtr) -> CNLP_Bool {
 
       if values.is_null() {
         /* return the structure. This is a symmetric matrix, fill the lower left
@@ -420,26 +420,26 @@ mod tests {
         *values.offset(9) += *lambda.offset(1) * 2.0;                      /* 3,3 */
       }
 
-      true as Bool
+      true as CNLP_Bool
     }
 
     extern "C" fn intermediate_cb(
-        _alg_mod: Index,
-        _iter_count: Index,
-        _obj_value: Number,
-        inf_pr: Number,
-        _inf_du: Number,
-        _mu: Number,
-        _d_norm: Number,
-        _regularization_size: Number,
-        _alpha_du: Number,
-        _alpha_pr: Number,
-        _ls_trials: Index,
-        _user_data: UserDataPtr) -> Bool {
+        _alg_mod: CNLP_AlgorithmMode,
+        _iter_count: CNLP_Index,
+        _obj_value: CNLP_Number,
+        inf_pr: CNLP_Number,
+        _inf_du: CNLP_Number,
+        _mu: CNLP_Number,
+        _d_norm: CNLP_Number,
+        _regularization_size: CNLP_Number,
+        _alpha_du: CNLP_Number,
+        _alpha_pr: CNLP_Number,
+        _ls_trials: CNLP_Index,
+        _user_data: CNLP_UserDataPtr) -> CNLP_Bool {
       if inf_pr < 1e-4 {
-          false as Bool
+          false as CNLP_Bool
       } else {
-          true as Bool
+          true as CNLP_Bool
       }
     }
 }
