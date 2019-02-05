@@ -115,14 +115,19 @@
 
 use ipopt_sys as ffi;
 
-use crate::ffi::{Bool, Int};
+use crate::ffi::{
+    CNLP_Bool as Bool,
+    CNLP_Int as Int,
+};
+pub use crate::ffi::{
+    // Uniform floating point number type.
+    CNLP_Number as Number, // f64
+    // Index type used to access internal buffers.
+    CNLP_Index as Index,  // i32
+};
+
 use std::ffi::CString;
 use std::slice;
-
-/// Uniform floating point number type.
-pub type Number = f64; // Same as ffi::Number
-/// Index type used to access internal buffers.
-pub type Index = i32; // Same as ffi::Index
 
 /// The non-linear problem to be solved by Ipopt. This trait specifies all the
 /// information needed to construct the unconstrained optimization problem (although the
@@ -344,7 +349,7 @@ pub struct Solution<'a> {
 
 impl<'a> Solution<'a> {
     /// Construct the solution from raw arrays returned from the Ipopt C interface.
-    fn from_raw(data: ffi::SolverData, num_primal_vars: usize, num_dual_vars: usize) -> Solution<'a> {
+    fn from_raw(data: ffi::CNLP_SolverData, num_primal_vars: usize, num_dual_vars: usize) -> Solution<'a> {
         Solution {
             primal_variables: unsafe {
                 slice::from_raw_parts(data.x, num_primal_vars)
@@ -460,7 +465,7 @@ pub type IntermediateCallback<P> = fn(&mut P, IntermediateCallbackData) -> bool;
 /// needed to solve these problems using first and second order methods.
 pub struct Ipopt<P: BasicProblem> {
     /// Internal (opaque) Ipopt problem representation.
-    nlp_internal: ffi::IpoptProblem,
+    nlp_internal: ffi::CNLP_ProblemPtr,
     /// User specified interface defining the problem to be solved.
     nlp_interface: P,
     /// Intermediate callback.
@@ -492,7 +497,7 @@ unsafe impl<P: BasicProblem> Send for Ipopt<P> {}
 impl<P: BasicProblem> Ipopt<P> {
     /// Common implementation for constructing an Ipopt struct. This involves some unsafe code that
     /// should be isolated for easier maintenance and debugging.
-    fn new_impl(nlp_internal: ffi::IpoptProblem, nlp: P, num_vars: usize, num_constraints: usize) -> Ipopt<P> {
+    fn new_impl(nlp_internal: ffi::CNLP_ProblemPtr, nlp: P, num_vars: usize, num_constraints: usize) -> Ipopt<P> {
         let mut ipopt = Ipopt {
             nlp_internal,
             nlp_interface: nlp,
@@ -505,7 +510,7 @@ impl<P: BasicProblem> Ipopt<P> {
         // Initialize solution arrays so we can safely call solver_data and solver_data_mut without
         // addressing unallocated memory.
         unsafe {
-            ffi::InitSolution(ipopt.nlp_internal, &mut ipopt as *mut Ipopt<P> as *mut std::ffi::c_void);
+            ffi::cnlp_init_solution(ipopt.nlp_internal, &mut ipopt as *mut Ipopt<P> as *mut std::ffi::c_void);
         }
 
         ipopt
@@ -520,11 +525,11 @@ impl<P: BasicProblem> Ipopt<P> {
             return Err(CreateError::NoOptimizationVariablesSpecified);
         }
 
-        let mut nlp_internal: ffi::IpoptProblem = ::std::ptr::null_mut();
+        let mut nlp_internal: ffi::CNLP_ProblemPtr = ::std::ptr::null_mut();
 
         let create_error = CreateProblemStatus::new(unsafe {
-            ffi::CreateIpoptProblem(
-                &mut nlp_internal as *mut ffi::IpoptProblem,
+            ffi::cnlp_create_problem(
+                &mut nlp_internal as *mut ffi::CNLP_ProblemPtr,
                 nlp.indexing_style() as Index,
                 Some(Self::basic_sizes),
                 Some(Self::basic_init),
@@ -552,7 +557,7 @@ impl<P: BasicProblem> Ipopt<P> {
     }
 
     /// Helper static function that can be used in the constructor.
-    fn set_ipopt_option<'a, O>(nlp: ffi::IpoptProblem, name: &str, option: O) -> bool
+    fn set_ipopt_option<'a, O>(nlp: ffi::CNLP_ProblemPtr, name: &str, option: O) -> bool
     where
         O: Into<IpoptOption<'a>>,
     {
@@ -562,13 +567,13 @@ impl<P: BasicProblem> Ipopt<P> {
 
             // Match option to one of the three types of options Ipopt can receive.
             match option.into() {
-                IpoptOption::Num(opt) => ffi::AddIpoptNumOption(nlp, name_cstr.as_ptr(), opt as Number),
+                IpoptOption::Num(opt) => ffi::cnlp_add_num_option(nlp, name_cstr.as_ptr(), opt as Number),
                 IpoptOption::Str(opt) => {
                     // Convert option string to `char *`
                     let opt_cstr = CString::new(opt).unwrap();
-                    ffi::AddIpoptStrOption(nlp, name_cstr.as_ptr(), opt_cstr.as_ptr())
+                    ffi::cnlp_add_str_option(nlp, name_cstr.as_ptr(), opt_cstr.as_ptr())
                 }
-                IpoptOption::Int(opt) => ffi::AddIpoptIntOption(nlp, name_cstr.as_ptr(), opt as Int),
+                IpoptOption::Int(opt) => ffi::cnlp_add_int_option(nlp, name_cstr.as_ptr(), opt as Int),
             }
         } != 0) // converts Ipopt Bool to Rust bool
     }
@@ -595,9 +600,9 @@ impl<P: BasicProblem> Ipopt<P> {
 
         unsafe {
             if mb_cb.is_some() {
-                ffi::SetIntermediateCallback(self.nlp_internal, Some(Self::intermediate_cb));
+                ffi::cnlp_set_intermediate_callback(self.nlp_internal, Some(Self::intermediate_cb));
             } else {
-                ffi::SetIntermediateCallback(self.nlp_internal, None);
+                ffi::cnlp_set_intermediate_callback(self.nlp_internal, None);
             }
         }
     }
@@ -607,7 +612,7 @@ impl<P: BasicProblem> Ipopt<P> {
     pub fn solve(&mut self) -> SolveResult<P> {
         let res = {
             let udata_ptr = self as *mut Ipopt<P>;
-            unsafe { ffi::IpoptSolve(self.nlp_internal, udata_ptr as ffi::UserDataPtr) }
+            unsafe { ffi::cnlp_solve(self.nlp_internal, udata_ptr as ffi::CNLP_UserDataPtr) }
         };
 
         let Ipopt {
@@ -639,7 +644,7 @@ impl<P: BasicProblem> Ipopt<P> {
             ..
         } = *self;
 
-        let data = unsafe { ffi::GetSolverData(nlp_internal) };
+        let data = unsafe { ffi::cnlp_get_solver_data(nlp_internal) };
 
         SolverDataMut {
             problem,
@@ -658,7 +663,7 @@ impl<P: BasicProblem> Ipopt<P> {
             ..
         } = *self;
 
-        let data = unsafe { ffi::GetSolverData(nlp_internal) };
+        let data = unsafe { ffi::cnlp_get_solver_data(nlp_internal) };
 
         SolverData {
             problem,
@@ -682,7 +687,7 @@ impl<P: BasicProblem> Ipopt<P> {
         m: Index,
         _init_lambda: Bool,
         _lambda: *mut Number,
-        user_data: ffi::UserDataPtr,
+        user_data: ffi::CNLP_UserDataPtr,
     ) -> Bool {
         assert_eq!(m, 0);
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
@@ -705,7 +710,7 @@ impl<P: BasicProblem> Ipopt<P> {
         m: *mut Index,
         nnz_jac_g: *mut Index,
         nnz_h_lag: *mut Index,
-        user_data: ffi::UserDataPtr,
+        user_data: ffi::CNLP_UserDataPtr,
     ) -> Bool {
         let ipopt = &mut (*(user_data as *mut Ipopt<P>));
         
@@ -728,7 +733,7 @@ impl<P: BasicProblem> Ipopt<P> {
         m: Index,
         _g_l: *mut Number,
         _g_u: *mut Number,
-        user_data: ffi::UserDataPtr,
+        user_data: ffi::CNLP_UserDataPtr,
     ) -> Bool {
         assert_eq!(m, 0);
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
@@ -744,7 +749,7 @@ impl<P: BasicProblem> Ipopt<P> {
         x: *const Number,
         _new_x: Bool,
         obj_value: *mut Number,
-        user_data: ffi::UserDataPtr,
+        user_data: ffi::CNLP_UserDataPtr,
     ) -> Bool {
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
         nlp.objective(slice::from_raw_parts(x, n as usize), &mut *obj_value) as Bool
@@ -756,7 +761,7 @@ impl<P: BasicProblem> Ipopt<P> {
         x: *const Number,
         _new_x: Bool,
         grad_f: *mut Number,
-        user_data: ffi::UserDataPtr,
+        user_data: ffi::CNLP_UserDataPtr,
     ) -> Bool {
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
         nlp.objective_grad(
@@ -772,7 +777,7 @@ impl<P: BasicProblem> Ipopt<P> {
         _new_x: Bool,
         _m: Index,
         _g: *mut Number,
-        _user_data: ffi::UserDataPtr,
+        _user_data: ffi::CNLP_UserDataPtr,
     ) -> Bool {
         true as Bool
     }
@@ -787,7 +792,7 @@ impl<P: BasicProblem> Ipopt<P> {
         _irow: *mut Index,
         _jcol: *mut Index,
         _values: *mut Number,
-        _user_data: ffi::UserDataPtr,
+        _user_data: ffi::CNLP_UserDataPtr,
     ) -> Bool {
         true as Bool
     }
@@ -805,7 +810,7 @@ impl<P: BasicProblem> Ipopt<P> {
         _irow: *mut Index,
         _jcol: *mut Index,
         _values: *mut Number,
-        _user_data: ffi::UserDataPtr,
+        _user_data: ffi::CNLP_UserDataPtr,
     ) -> Bool {
         // From "Quasi-Newton Approximation of Second-Derivatives" in Ipopt docs:
         //  "If you are using the C or Fortran interface, you still need to implement [eval_h],
@@ -825,7 +830,7 @@ impl<P: BasicProblem> Ipopt<P> {
         use_g_scaling: *mut Bool,
         m: Index,
         _g_scaling: *mut Number,
-        user_data: ffi::UserDataPtr,
+        user_data: ffi::CNLP_UserDataPtr,
     ) -> Bool {
         assert_eq!(m, 0);
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
@@ -837,7 +842,7 @@ impl<P: BasicProblem> Ipopt<P> {
 
     /// Intermediate callback.
     unsafe extern "C" fn intermediate_cb(
-        alg_mod: Index,
+        alg_mod: ffi::CNLP_AlgorithmMode,
         iter_count: Index,
         obj_value: Number,
         inf_pr: Number,
@@ -848,7 +853,7 @@ impl<P: BasicProblem> Ipopt<P> {
         alpha_du: Number,
         alpha_pr: Number,
         ls_trials: Index,
-        user_data: ffi::UserDataPtr,
+        user_data: ffi::CNLP_UserDataPtr,
     ) -> Bool {
         let ip = &mut (*(user_data as *mut Ipopt<P>));
         if let Some(callback) = ip.intermediate_callback {
@@ -887,11 +892,11 @@ impl<P: NewtonProblem> Ipopt<P> {
             return Err(CreateError::NoOptimizationVariablesSpecified);
         }
 
-        let mut nlp_internal: ffi::IpoptProblem = ::std::ptr::null_mut();
+        let mut nlp_internal: ffi::CNLP_ProblemPtr = ::std::ptr::null_mut();
 
         let create_error = CreateProblemStatus::new(unsafe {
-            ffi::CreateIpoptProblem(
-                &mut nlp_internal as *mut ffi::IpoptProblem,
+            ffi::cnlp_create_problem(
+                &mut nlp_internal as *mut ffi::CNLP_ProblemPtr,
                 nlp.indexing_style() as Index,
                 Some(Self::newton_sizes),
                 Some(Self::basic_init),
@@ -923,7 +928,7 @@ impl<P: NewtonProblem> Ipopt<P> {
         m: *mut Index,
         nnz_jac_g: *mut Index,
         nnz_h_lag: *mut Index,
-        user_data: ffi::UserDataPtr,
+        user_data: ffi::CNLP_UserDataPtr,
     ) -> Bool {
         Self::basic_sizes(n, m, nnz_jac_g, nnz_h_lag, user_data);
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
@@ -944,7 +949,7 @@ impl<P: NewtonProblem> Ipopt<P> {
         irow: *mut Index,
         jcol: *mut Index,
         values: *mut Number,
-        user_data: ffi::UserDataPtr,
+        user_data: ffi::CNLP_UserDataPtr,
     ) -> Bool {
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
         if values.is_null() {
@@ -991,11 +996,11 @@ impl<P: ConstrainedProblem> Ipopt<P> {
             return Err(CreateError::InvalidConstraintJacobian);
         }
 
-        let mut nlp_internal: ffi::IpoptProblem = ::std::ptr::null_mut();
+        let mut nlp_internal: ffi::CNLP_ProblemPtr = ::std::ptr::null_mut();
 
         let create_error = CreateProblemStatus::new(unsafe {
-            ffi::CreateIpoptProblem(
-                &mut nlp_internal as *mut ffi::IpoptProblem,
+            ffi::cnlp_create_problem(
+                &mut nlp_internal as *mut ffi::CNLP_ProblemPtr,
                 nlp.indexing_style() as Index,
                 Some(Self::sizes),
                 Some(Self::init),
@@ -1031,7 +1036,7 @@ impl<P: ConstrainedProblem> Ipopt<P> {
         m: Index,
         init_lambda: Bool,
         lambda: *mut Number,
-        user_data: ffi::UserDataPtr,
+        user_data: ffi::CNLP_UserDataPtr,
     ) -> Bool {
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
         if init_x != 0 {
@@ -1055,7 +1060,7 @@ impl<P: ConstrainedProblem> Ipopt<P> {
         m: *mut Index,
         nnz_jac_g: *mut Index,
         nnz_h_lag: *mut Index,
-        user_data: ffi::UserDataPtr,
+        user_data: ffi::CNLP_UserDataPtr,
     ) -> Bool {
         let ipopt = &mut (*(user_data as *mut Ipopt<P>));
         ipopt.num_primal_variables = ipopt.nlp_interface.num_variables();
@@ -1077,7 +1082,7 @@ impl<P: ConstrainedProblem> Ipopt<P> {
         m: Index,
         g_l: *mut Number,
         g_u: *mut Number,
-        user_data: ffi::UserDataPtr,
+        user_data: ffi::CNLP_UserDataPtr,
     ) -> Bool {
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
         (nlp.bounds(
@@ -1096,7 +1101,7 @@ impl<P: ConstrainedProblem> Ipopt<P> {
         _new_x: Bool,
         m: Index,
         g: *mut Number,
-        user_data: ffi::UserDataPtr,
+        user_data: ffi::CNLP_UserDataPtr,
     ) -> Bool {
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
         nlp.constraint(
@@ -1115,7 +1120,7 @@ impl<P: ConstrainedProblem> Ipopt<P> {
         irow: *mut Index,
         jcol: *mut Index,
         values: *mut Number,
-        user_data: ffi::UserDataPtr,
+        user_data: ffi::CNLP_UserDataPtr,
     ) -> Bool {
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
         if values.is_null() {
@@ -1147,7 +1152,7 @@ impl<P: ConstrainedProblem> Ipopt<P> {
         irow: *mut Index,
         jcol: *mut Index,
         values: *mut Number,
-        user_data: ffi::UserDataPtr,
+        user_data: ffi::CNLP_UserDataPtr,
     ) -> Bool {
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
         if values.is_null() {
@@ -1177,7 +1182,7 @@ impl<P: ConstrainedProblem> Ipopt<P> {
         use_g_scaling: *mut Bool,
         m: Index,
         g_scaling: *mut Number,
-        user_data: ffi::UserDataPtr,
+        user_data: ffi::CNLP_UserDataPtr,
     ) -> Bool {
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
         *obj_scaling = nlp.objective_scaling();
@@ -1191,7 +1196,7 @@ impl<P: ConstrainedProblem> Ipopt<P> {
 impl<P: BasicProblem> Drop for Ipopt<P> {
     fn drop(&mut self) {
         unsafe {
-            ffi::FreeIpoptProblem(self.nlp_internal);
+            ffi::cnlp_free_problem(self.nlp_internal);
         }
     }
 }
@@ -1329,36 +1334,36 @@ pub enum SolveStatus {
 
 #[allow(non_snake_case)]
 impl SolveStatus {
-    fn new(status: ffi::ApplicationReturnStatus) -> Self {
+    fn new(status: ffi::CNLP_ApplicationReturnStatus) -> Self {
         use crate::SolveStatus as RS;
         match status {
-            ffi::ApplicationReturnStatus_Solve_Succeeded => RS::SolveSucceeded,
-            ffi::ApplicationReturnStatus_Solved_To_Acceptable_Level => RS::SolvedToAcceptableLevel,
-            ffi::ApplicationReturnStatus_Infeasible_Problem_Detected => {
+            ffi::CNLP_ApplicationReturnStatus_CNLP_SOLVE_SUCCEEDED => RS::SolveSucceeded,
+            ffi::CNLP_ApplicationReturnStatus_CNLP_SOLVED_TO_ACCEPTABLE_LEVEL => RS::SolvedToAcceptableLevel,
+            ffi::CNLP_ApplicationReturnStatus_CNLP_INFEASIBLE_PROBLEM_DETECTED => {
                 RS::InfeasibleProblemDetected
             }
-            ffi::ApplicationReturnStatus_Search_Direction_Becomes_Too_Small => {
+            ffi::CNLP_ApplicationReturnStatus_CNLP_SEARCH_DIRECTION_BECOMES_TOO_SMALL => {
                 RS::SearchDirectionBecomesTooSmall
             }
-            ffi::ApplicationReturnStatus_Diverging_Iterates => RS::DivergingIterates,
-            ffi::ApplicationReturnStatus_User_Requested_Stop => RS::UserRequestedStop,
-            ffi::ApplicationReturnStatus_Feasible_Point_Found => RS::FeasiblePointFound,
-            ffi::ApplicationReturnStatus_Maximum_Iterations_Exceeded => {
+            ffi::CNLP_ApplicationReturnStatus_CNLP_DIVERGING_ITERATES => RS::DivergingIterates,
+            ffi::CNLP_ApplicationReturnStatus_CNLP_USER_REQUESTED_STOP => RS::UserRequestedStop,
+            ffi::CNLP_ApplicationReturnStatus_CNLP_FEASIBLE_POINT_FOUND => RS::FeasiblePointFound,
+            ffi::CNLP_ApplicationReturnStatus_CNLP_MAXIMUM_ITERATIONS_EXCEEDED => {
                 RS::MaximumIterationsExceeded
             }
-            ffi::ApplicationReturnStatus_Restoration_Failed => RS::RestorationFailed,
-            ffi::ApplicationReturnStatus_Error_In_Step_Computation => RS::ErrorInStepComputation,
-            ffi::ApplicationReturnStatus_Maximum_CpuTime_Exceeded => RS::MaximumCpuTimeExceeded,
-            ffi::ApplicationReturnStatus_Not_Enough_Degrees_Of_Freedom => {
+            ffi::CNLP_ApplicationReturnStatus_CNLP_RESTORATION_FAILED => RS::RestorationFailed,
+            ffi::CNLP_ApplicationReturnStatus_CNLP_ERROR_IN_STEP_COMPUTATION => RS::ErrorInStepComputation,
+            ffi::CNLP_ApplicationReturnStatus_CNLP_MAXIMUM_CPUTIME_EXCEEDED => RS::MaximumCpuTimeExceeded,
+            ffi::CNLP_ApplicationReturnStatus_CNLP_NOT_ENOUGH_DEGREES_OF_FREEDOM => {
                 RS::NotEnoughDegreesOfFreedom
             }
-            ffi::ApplicationReturnStatus_Invalid_Problem_Definition => RS::InvalidProblemDefinition,
-            ffi::ApplicationReturnStatus_Invalid_Option => RS::InvalidOption,
-            ffi::ApplicationReturnStatus_Invalid_Number_Detected => RS::InvalidNumberDetected,
-            ffi::ApplicationReturnStatus_Unrecoverable_Exception => RS::UnrecoverableException,
-            ffi::ApplicationReturnStatus_NonIpopt_Exception_Thrown => RS::NonIpoptExceptionThrown,
-            ffi::ApplicationReturnStatus_Insufficient_Memory => RS::InsufficientMemory,
-            ffi::ApplicationReturnStatus_Internal_Error => RS::InternalError,
+            ffi::CNLP_ApplicationReturnStatus_CNLP_INVALID_PROBLEM_DEFINITION => RS::InvalidProblemDefinition,
+            ffi::CNLP_ApplicationReturnStatus_CNLP_INVALID_OPTION => RS::InvalidOption,
+            ffi::CNLP_ApplicationReturnStatus_CNLP_INVALID_NUMBER_DETECTED => RS::InvalidNumberDetected,
+            ffi::CNLP_ApplicationReturnStatus_CNLP_UNRECOVERABLE_EXCEPTION => RS::UnrecoverableException,
+            ffi::CNLP_ApplicationReturnStatus_CNLP_NONIPOPT_EXCEPTION_THROWN => RS::NonIpoptExceptionThrown,
+            ffi::CNLP_ApplicationReturnStatus_CNLP_INSUFFICIENT_MEMORY => RS::InsufficientMemory,
+            ffi::CNLP_ApplicationReturnStatus_CNLP_INTERNAL_ERROR => RS::InternalError,
             _ => RS::UnknownError,
         }
     }
@@ -1406,14 +1411,14 @@ enum CreateProblemStatus {
 
 #[allow(non_snake_case)]
 impl CreateProblemStatus {
-    fn new(status: ffi::CreateProblemStatus) -> Self {
+    fn new(status: ffi::CNLP_CreateProblemStatus) -> Self {
         use crate::CreateProblemStatus as RS;
         match status {
-            ffi::CreateProblemStatus_Success => RS::Success,
-            ffi::CreateProblemStatus_MissingInitialGuess => RS::MissingInitialGuess,
-            ffi::CreateProblemStatus_MissingBounds => RS::MissingBounds,
-            ffi::CreateProblemStatus_MissingEvalF => RS::MissingEvalF,
-            ffi::CreateProblemStatus_MissingEvalGradF => RS::MissingEvalGradF,
+            ffi::CNLP_CreateProblemStatus_CNLP_SUCCESS => RS::Success,
+            ffi::CNLP_CreateProblemStatus_CNLP_MISSING_INITIAL_GUESS => RS::MissingInitialGuess,
+            ffi::CNLP_CreateProblemStatus_CNLP_MISSING_BOUNDS => RS::MissingBounds,
+            ffi::CNLP_CreateProblemStatus_CNLP_MISSING_EVAL_F => RS::MissingEvalF,
+            ffi::CNLP_CreateProblemStatus_CNLP_MISSING_EVAL_GRAD_F => RS::MissingEvalGradF,
             _ => RS::UnknownError,
         }
     }
