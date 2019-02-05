@@ -6,18 +6,18 @@ rust-latest:
   image: rust:latest
   before_script:
       - apt-get update --yes
-      - apt-get install --yes cmake clang libclang-dev libgfortran-dev
+      - apt-get install --yes cmake clang libclang-dev libgfortran-6-dev
   script:
     - cargo build --verbose
     - cargo test --verbose
-  allow_failure: true
 
 rust-nightly:
   stage: build
   image: rustlang/rust:nightly
   before_script:
       - apt-get update --yes
-      - apt-get install --yes cmake clang libclang-dev libgfortran-dev
+      - apt-get install --yes cmake clang libclang-dev libgfortran-6-dev
   script:
     - cargo build --verbose
     - cargo test --verbose
+  allow_failure: true
