@@ -4,6 +4,9 @@ stages:
 rust-latest:
   stage: build
   image: rust:latest
+  before_script:
+      - apt-get update --yes
+      - apt-get install --yes cmake
   script:
     - cargo build --verbose
     - cargo test --verbose
@@ -12,6 +15,9 @@ rust-latest:
 rust-nightly:
   stage: build
   image: rustlang/rust:nightly
+  before_script:
+      - apt-get update --yes
+      - apt-get install --yes cmake
   script:
     - cargo build --verbose
     - cargo test --verbose
