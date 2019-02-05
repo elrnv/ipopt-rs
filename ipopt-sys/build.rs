@@ -53,6 +53,8 @@ const SOURCE_URL: &str = "https://www.coin-or.org/download/source/Ipopt";
 const VERSION: &str = "3.12.10";
 const MIN_VERSION: &str = "3.12.8";
 const BINARY_DL_URL: &str = "https://github.com/JuliaOpt/IpoptBuilder/releases/download/";
+const SOURCE_MD5: &str = "ee250ece251a82dc2580efa51f79d758";
+const SOURCE_SHA1: &str = "5eb1aefb2f9acfd8b1b5838370528ac1d73787d6";
 
 #[cfg(target_os = "macos")]
 mod platform {
@@ -234,8 +236,7 @@ fn download_and_install_prebuilt_binary() -> Result<PathBuf, Error> {
     dbg!(&tarball_path);
 
     if !unpacked_dir.exists() {
-        download_tarball(&tarball_path, &BINARY_URL)?;
-        check_tarball_hashes(&tarball_path)?;
+        download_tarball(&tarball_path, &BINARY_URL, BINARY_MD5, BINARY_SHA1)?;
         extract_tarball(tarball_path, &unpacked_dir);
     }
 
@@ -271,7 +272,7 @@ fn download_and_install_prebuilt_binary() -> Result<PathBuf, Error> {
     Ok(install_dir)
 }
 
-fn check_tarball_hashes(tarball_path: &Path) -> Result<(), Error> {
+fn check_tarball_hashes(tarball_path: &Path, md5: &str, sha1: &str) -> Result<(), Error> {
     use std::io::Read;
     use crypto::digest::Digest;
 
@@ -282,7 +283,7 @@ fn check_tarball_hashes(tarball_path: &Path) -> Result<(), Error> {
         let mut hasher = crypto::md5::Md5::new();
         hasher.input(&buffer);
         let dl_hex = hasher.result_str();
-        if BINARY_MD5 != dl_hex {
+        if md5 != dl_hex {
             return Err(Error::HashMismatch);
         }
     }
@@ -293,7 +294,7 @@ fn check_tarball_hashes(tarball_path: &Path) -> Result<(), Error> {
         let mut hasher = crypto::sha1::Sha1::new();
         hasher.input(&buffer);
         let dl_hex = hasher.result_str();
-        if BINARY_SHA1 != dl_hex {
+        if sha1 != dl_hex {
             return Err(Error::HashMismatch);
         }
     }
@@ -332,7 +333,7 @@ fn link(cnlp_install_path: PathBuf) -> Result<(), Error> {
 }
 
 /// Download a tarball if it doesn't already exist.
-fn download_tarball(tarball_path: &Path, binary_url: &str) -> Result<(), Error> {
+fn download_tarball(tarball_path: &Path, binary_url: &str, md6: &str, sha1: &str) -> Result<(), Error> {
     if !tarball_path.exists() {
         let f = File::create(tarball_path).unwrap();
         let mut writer = BufWriter::new(f);
@@ -351,6 +352,8 @@ fn download_tarball(tarball_path: &Path, binary_url: &str) -> Result<(), Error> 
             });
         }
     }
+
+    check_tarball_hashes(&tarball_path, md5, sha1)?;
 
     Ok(())
 }
@@ -397,7 +400,7 @@ fn build_and_install_ipopt() -> Result<PathBuf, Error> {
     let tarball_path = download_dir.join(file_name);
     dbg!(&tarball_path);
 
-    download_tarball(&tarball_path, &binary_url)?;
+    download_tarball(&tarball_path, &binary_url, SOURCE_MD5, SOURCE_SHA1)?;
     extract_tarball(tarball_path, &download_dir);
 
     // Configure and compile
@@ -418,7 +421,7 @@ fn build_and_install_ipopt() -> Result<PathBuf, Error> {
     let proj_root_dir = env::current_dir().unwrap();
     env::set_current_dir(build_dir).unwrap();
 
-    let res = build_ipopt(&install_dir, debug);
+    let res = build_with_mkl(&install_dir, debug);
 
     // Restore current directory
     env::set_current_dir(proj_root_dir).unwrap();
@@ -429,7 +432,7 @@ fn build_and_install_ipopt() -> Result<PathBuf, Error> {
 }
 
 // Build Ipopt with MKL in the current directory.
-fn build_ipopt(install_dir: &Path, debug: bool) -> Result<(), Error> {
+fn build_with_mkl(install_dir: &Path, debug: bool) -> Result<(), Error> {
     // Look for intel MKL and link to its libraries if found.
     let mkl_root = PathBuf::from(env::var("MKLROOT").unwrap_or("/opt/intel/mkl".to_string()));
     dbg!(&mkl_root);
