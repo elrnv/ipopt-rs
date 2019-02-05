@@ -18,8 +18,7 @@
  * step. In fact here we use Ipopt's implementation of hessian approximation, which is not quite a
  * second order method, although it should easily solve the quadratic problem in one step.
  */
-
-use approx::{assert_relative_eq, relative_eq, __assert_approx};
+use approx::{__assert_approx, assert_relative_eq, relative_eq};
 
 use ipopt::*;
 
@@ -28,7 +27,7 @@ struct NLP {
     x_start: Vec<f64>,
 }
 
-impl NLP { 
+impl NLP {
     fn count_iterations_cb(&mut self, data: IntermediateCallbackData) -> bool {
         self.iterations = data.iter_count as usize;
         true
@@ -79,11 +78,7 @@ fn quadratic_test() {
     ipopt.set_intermediate_callback(Some(NLP::count_iterations_cb));
     {
         let SolveResult {
-            solver_data:
-                SolverDataMut {
-                    problem,
-                    solution,
-                },
+            solver_data: SolverDataMut { problem, solution },
             objective_value: obj,
             status,
             ..
@@ -109,10 +104,11 @@ fn quadratic_test() {
             solver_data:
                 SolverDataMut {
                     problem,
-                    solution: Solution {
-                        primal_variables: x,
-                        ..
-                    },
+                    solution:
+                        Solution {
+                            primal_variables: x,
+                            ..
+                        },
                 },
             objective_value: obj,
             status,

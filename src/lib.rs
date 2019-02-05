@@ -40,7 +40,7 @@
  * > formulated in the above formulation by setting the corresponding components of
  * > `g_L` and `g_U` to the same value.
  *
- * This crate aims to 
+ * This crate aims to
  *   - reduce the boilerplate, especially for setting up simple unconstrained problems, and
  *   - prevent common mistakes when defining optimization problems as early as possible.
  *
@@ -115,15 +115,12 @@
 
 use ipopt_sys as ffi;
 
-use crate::ffi::{
-    CNLP_Bool as Bool,
-    CNLP_Int as Int,
-};
+use crate::ffi::{CNLP_Bool as Bool, CNLP_Int as Int};
 pub use crate::ffi::{
+    // Index type used to access internal buffers.
+    CNLP_Index as Index, // i32
     // Uniform floating point number type.
     CNLP_Number as Number, // f64
-    // Index type used to access internal buffers.
-    CNLP_Index as Index,  // i32
 };
 
 use std::ffi::CString;
@@ -162,7 +159,7 @@ pub trait BasicProblem {
     /// For convenience, the default implementation initializes bounds multipliers to zero. This is
     /// a good guess for any initial point in the interior of the feasible region.
     fn initial_bounds_multipliers(&self, z_l: &mut [Number], z_u: &mut [Number]) {
-        for (l,u) in z_l.iter_mut().zip(z_u.iter_mut()) {
+        for (l, u) in z_l.iter_mut().zip(z_u.iter_mut()) {
             *l = 0.0;
             *u = 0.0;
         }
@@ -349,20 +346,20 @@ pub struct Solution<'a> {
 
 impl<'a> Solution<'a> {
     /// Construct the solution from raw arrays returned from the Ipopt C interface.
-    fn from_raw(data: ffi::CNLP_SolverData, num_primal_vars: usize, num_dual_vars: usize) -> Solution<'a> {
+    fn from_raw(
+        data: ffi::CNLP_SolverData,
+        num_primal_vars: usize,
+        num_dual_vars: usize,
+    ) -> Solution<'a> {
         Solution {
-            primal_variables: unsafe {
-                slice::from_raw_parts(data.x, num_primal_vars)
-            },
+            primal_variables: unsafe { slice::from_raw_parts(data.x, num_primal_vars) },
             lower_bound_multipliers: unsafe {
                 slice::from_raw_parts(data.mult_x_L, num_primal_vars)
             },
             upper_bound_multipliers: unsafe {
                 slice::from_raw_parts(data.mult_x_U, num_primal_vars)
             },
-            constraint_multipliers: unsafe {
-                slice::from_raw_parts(data.mult_g, num_dual_vars)
-            },
+            constraint_multipliers: unsafe { slice::from_raw_parts(data.mult_g, num_dual_vars) },
         }
     }
 }
@@ -497,20 +494,28 @@ unsafe impl<P: BasicProblem> Send for Ipopt<P> {}
 impl<P: BasicProblem> Ipopt<P> {
     /// Common implementation for constructing an Ipopt struct. This involves some unsafe code that
     /// should be isolated for easier maintenance and debugging.
-    fn new_impl(nlp_internal: ffi::CNLP_ProblemPtr, nlp: P, num_vars: usize, num_constraints: usize) -> Ipopt<P> {
+    fn new_impl(
+        nlp_internal: ffi::CNLP_ProblemPtr,
+        nlp: P,
+        num_vars: usize,
+        num_constraints: usize,
+    ) -> Ipopt<P> {
         let mut ipopt = Ipopt {
             nlp_internal,
             nlp_interface: nlp,
             intermediate_callback: None,
             // These two will be updated every time sizes callback is called.
-            num_primal_variables: num_vars, 
+            num_primal_variables: num_vars,
             num_dual_variables: num_constraints,
         };
 
         // Initialize solution arrays so we can safely call solver_data and solver_data_mut without
         // addressing unallocated memory.
         unsafe {
-            ffi::cnlp_init_solution(ipopt.nlp_internal, &mut ipopt as *mut Ipopt<P> as *mut std::ffi::c_void);
+            ffi::cnlp_init_solution(
+                ipopt.nlp_internal,
+                &mut ipopt as *mut Ipopt<P> as *mut std::ffi::c_void,
+            );
         }
 
         ipopt
@@ -567,13 +572,17 @@ impl<P: BasicProblem> Ipopt<P> {
 
             // Match option to one of the three types of options Ipopt can receive.
             match option.into() {
-                IpoptOption::Num(opt) => ffi::cnlp_add_num_option(nlp, name_cstr.as_ptr(), opt as Number),
+                IpoptOption::Num(opt) => {
+                    ffi::cnlp_add_num_option(nlp, name_cstr.as_ptr(), opt as Number)
+                }
                 IpoptOption::Str(opt) => {
                     // Convert option string to `char *`
                     let opt_cstr = CString::new(opt).unwrap();
                     ffi::cnlp_add_str_option(nlp, name_cstr.as_ptr(), opt_cstr.as_ptr())
                 }
-                IpoptOption::Int(opt) => ffi::cnlp_add_int_option(nlp, name_cstr.as_ptr(), opt as Int),
+                IpoptOption::Int(opt) => {
+                    ffi::cnlp_add_int_option(nlp, name_cstr.as_ptr(), opt as Int)
+                }
             }
         } != 0) // converts Ipopt Bool to Rust bool
     }
@@ -713,7 +722,7 @@ impl<P: BasicProblem> Ipopt<P> {
         user_data: ffi::CNLP_UserDataPtr,
     ) -> Bool {
         let ipopt = &mut (*(user_data as *mut Ipopt<P>));
-        
+
         ipopt.num_primal_variables = ipopt.nlp_interface.num_variables();
         ipopt.num_dual_variables = 0; // No constraints
 
@@ -835,7 +844,8 @@ impl<P: BasicProblem> Ipopt<P> {
         assert_eq!(m, 0);
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
         *obj_scaling = nlp.objective_scaling();
-        *use_x_scaling = nlp.variable_scaling(slice::from_raw_parts_mut(x_scaling, n as usize)) as Bool;
+        *use_x_scaling =
+            nlp.variable_scaling(slice::from_raw_parts_mut(x_scaling, n as usize)) as Bool;
         *use_g_scaling = false as Bool;
         true as Bool
     }
@@ -991,8 +1001,9 @@ impl<P: ConstrainedProblem> Ipopt<P> {
         // It doesn't make sense to have constant constraints. Also if there is a non-trivial
         // constraint jacobian, there better be some constraints.
         // We check for these here explicitly to prevent hard-to-debug errors down the line.
-        if (num_constraints > 0 && num_constraint_jac_nnz == 0) 
-            || (num_constraints == 0 && num_constraint_jac_nnz > 0) {
+        if (num_constraints > 0 && num_constraint_jac_nnz == 0)
+            || (num_constraints == 0 && num_constraint_jac_nnz > 0)
+        {
             return Err(CreateError::InvalidConstraintJacobian);
         }
 
@@ -1186,8 +1197,10 @@ impl<P: ConstrainedProblem> Ipopt<P> {
     ) -> Bool {
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
         *obj_scaling = nlp.objective_scaling();
-        *use_x_scaling = nlp.variable_scaling(slice::from_raw_parts_mut(x_scaling, n as usize)) as Bool;
-        *use_g_scaling = nlp.constraint_scaling(slice::from_raw_parts_mut(g_scaling, m as usize)) as Bool;
+        *use_x_scaling =
+            nlp.variable_scaling(slice::from_raw_parts_mut(x_scaling, n as usize)) as Bool;
+        *use_g_scaling =
+            nlp.constraint_scaling(slice::from_raw_parts_mut(g_scaling, m as usize)) as Bool;
         true as Bool
     }
 }
@@ -1338,7 +1351,9 @@ impl SolveStatus {
         use crate::SolveStatus as RS;
         match status {
             ffi::CNLP_ApplicationReturnStatus_CNLP_SOLVE_SUCCEEDED => RS::SolveSucceeded,
-            ffi::CNLP_ApplicationReturnStatus_CNLP_SOLVED_TO_ACCEPTABLE_LEVEL => RS::SolvedToAcceptableLevel,
+            ffi::CNLP_ApplicationReturnStatus_CNLP_SOLVED_TO_ACCEPTABLE_LEVEL => {
+                RS::SolvedToAcceptableLevel
+            }
             ffi::CNLP_ApplicationReturnStatus_CNLP_INFEASIBLE_PROBLEM_DETECTED => {
                 RS::InfeasibleProblemDetected
             }
@@ -1352,16 +1367,28 @@ impl SolveStatus {
                 RS::MaximumIterationsExceeded
             }
             ffi::CNLP_ApplicationReturnStatus_CNLP_RESTORATION_FAILED => RS::RestorationFailed,
-            ffi::CNLP_ApplicationReturnStatus_CNLP_ERROR_IN_STEP_COMPUTATION => RS::ErrorInStepComputation,
-            ffi::CNLP_ApplicationReturnStatus_CNLP_MAXIMUM_CPUTIME_EXCEEDED => RS::MaximumCpuTimeExceeded,
+            ffi::CNLP_ApplicationReturnStatus_CNLP_ERROR_IN_STEP_COMPUTATION => {
+                RS::ErrorInStepComputation
+            }
+            ffi::CNLP_ApplicationReturnStatus_CNLP_MAXIMUM_CPUTIME_EXCEEDED => {
+                RS::MaximumCpuTimeExceeded
+            }
             ffi::CNLP_ApplicationReturnStatus_CNLP_NOT_ENOUGH_DEGREES_OF_FREEDOM => {
                 RS::NotEnoughDegreesOfFreedom
             }
-            ffi::CNLP_ApplicationReturnStatus_CNLP_INVALID_PROBLEM_DEFINITION => RS::InvalidProblemDefinition,
+            ffi::CNLP_ApplicationReturnStatus_CNLP_INVALID_PROBLEM_DEFINITION => {
+                RS::InvalidProblemDefinition
+            }
             ffi::CNLP_ApplicationReturnStatus_CNLP_INVALID_OPTION => RS::InvalidOption,
-            ffi::CNLP_ApplicationReturnStatus_CNLP_INVALID_NUMBER_DETECTED => RS::InvalidNumberDetected,
-            ffi::CNLP_ApplicationReturnStatus_CNLP_UNRECOVERABLE_EXCEPTION => RS::UnrecoverableException,
-            ffi::CNLP_ApplicationReturnStatus_CNLP_NONIPOPT_EXCEPTION_THROWN => RS::NonIpoptExceptionThrown,
+            ffi::CNLP_ApplicationReturnStatus_CNLP_INVALID_NUMBER_DETECTED => {
+                RS::InvalidNumberDetected
+            }
+            ffi::CNLP_ApplicationReturnStatus_CNLP_UNRECOVERABLE_EXCEPTION => {
+                RS::UnrecoverableException
+            }
+            ffi::CNLP_ApplicationReturnStatus_CNLP_NONIPOPT_EXCEPTION_THROWN => {
+                RS::NonIpoptExceptionThrown
+            }
             ffi::CNLP_ApplicationReturnStatus_CNLP_INSUFFICIENT_MEMORY => RS::InsufficientMemory,
             ffi::CNLP_ApplicationReturnStatus_CNLP_INTERNAL_ERROR => RS::InternalError,
             _ => RS::UnknownError,
@@ -1617,12 +1644,13 @@ mod tests {
 
         let solver = Ipopt::new(nlp.clone()).expect("Failed to create Ipopt solver");
         let SolverData {
-            solution: Solution {
-                primal_variables,
-                constraint_multipliers,
-                lower_bound_multipliers,
-                upper_bound_multipliers,
-            },
+            solution:
+                Solution {
+                    primal_variables,
+                    constraint_multipliers,
+                    lower_bound_multipliers,
+                    upper_bound_multipliers,
+                },
             ..
         } = solver.solver_data();
 

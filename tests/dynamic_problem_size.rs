@@ -18,8 +18,7 @@
  * changes, we can still use the solution from the previous solve for the new problem with a larger
  * problem size. This shows that warm starts can be very problem specific.
  */
-
-use approx::{assert_relative_eq, relative_eq, __assert_approx};
+use approx::{__assert_approx, assert_relative_eq, relative_eq};
 use std::cell::RefCell;
 
 use ipopt::*;
@@ -40,7 +39,9 @@ impl NLP {
     // functionality into the crate is future work.
     fn save_solution_for_warm_start(&mut self, solution: Solution) {
         self.x_start.borrow_mut().clear();
-        self.x_start.borrow_mut().extend_from_slice(&solution.primal_variables);
+        self.x_start
+            .borrow_mut()
+            .extend_from_slice(&solution.primal_variables);
     }
 }
 
@@ -125,12 +126,9 @@ fn quadratic_test() {
 
     {
         let SolveResult {
-            solver_data:
-                SolverDataMut {
-                    problem,
-                    solution,
-                    ..
-                },
+            solver_data: SolverDataMut {
+                problem, solution, ..
+            },
             objective_value: obj,
             status,
             ..
@@ -154,11 +152,7 @@ fn quadratic_test() {
     // since the problem is already solved.
     {
         let SolveResult {
-            solver_data:
-                SolverDataMut {
-                    problem,
-                    ..
-                },
+            solver_data: SolverDataMut { problem, .. },
             status,
             ..
         } = ipopt.solve();
@@ -175,10 +169,11 @@ fn quadratic_test() {
             solver_data:
                 SolverDataMut {
                     problem,
-                    solution: Solution {
-                        primal_variables: x,
-                        ..
-                    },
+                    solution:
+                        Solution {
+                            primal_variables: x,
+                            ..
+                        },
                 },
             objective_value: obj,
             status,

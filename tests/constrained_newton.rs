@@ -12,16 +12,16 @@
 //   See the License for the specific language governing permissions and
 //   limitations under the License.
 
-use approx::{assert_relative_eq, relative_eq, __assert_approx};
+use approx::{__assert_approx, assert_relative_eq, relative_eq};
 
 use ipopt::*;
 
 struct NLP {
     g_offset: [f64; 2],
     iterations: usize,
-    x_start: Vec<f64>, // Save variable results for warm start
-    z_l_start: Vec<f64>, // Save lower bound multipliers for warm start
-    z_u_start: Vec<f64>, // Save upper bound multipliers for warm start
+    x_start: Vec<f64>,      // Save variable results for warm start
+    z_l_start: Vec<f64>,    // Save lower bound multipliers for warm start
+    z_u_start: Vec<f64>,    // Save upper bound multipliers for warm start
     lambda_start: Vec<f64>, // Save constraint multipliers for warm start
 }
 impl NLP {
@@ -38,7 +38,10 @@ impl NLP {
         if self.iterations < 10 {
             // A panic here will hopefully produce a failure, but IIRC it is UB since it goes
             // through the ffi.
-            assert!(data.inf_du > 1e7, "ERROR: Variables or constraints have not been scaled properly!");
+            assert!(
+                data.inf_du > 1e7,
+                "ERROR: Variables or constraints have not been scaled properly!"
+            );
         }
         true
     }
@@ -52,9 +55,12 @@ impl NLP {
         self.lambda_start.clear();
 
         self.x_start.extend_from_slice(&solution.primal_variables);
-        self.z_l_start.extend_from_slice(&solution.lower_bound_multipliers);
-        self.z_u_start.extend_from_slice(&solution.upper_bound_multipliers);
-        self.lambda_start.extend_from_slice(&solution.constraint_multipliers);
+        self.z_l_start
+            .extend_from_slice(&solution.lower_bound_multipliers);
+        self.z_u_start
+            .extend_from_slice(&solution.upper_bound_multipliers);
+        self.lambda_start
+            .extend_from_slice(&solution.constraint_multipliers);
     }
 }
 
@@ -253,12 +259,13 @@ fn hs071_user_interrupt_test() {
         solver_data:
             SolverDataMut {
                 problem,
-                solution: Solution {
-                    primal_variables: x,
-                    constraint_multipliers: mult_g,
-                    lower_bound_multipliers: mult_x_l,
-                    upper_bound_multipliers: mult_x_u,
-                },
+                solution:
+                    Solution {
+                        primal_variables: x,
+                        constraint_multipliers: mult_g,
+                        lower_bound_multipliers: mult_x_l,
+                        upper_bound_multipliers: mult_x_u,
+                    },
             },
         status,
         objective_value: obj,
@@ -274,7 +281,7 @@ fn hs071_user_interrupt_test() {
     assert_relative_eq!(x[3], 1.379408e+00, max_relative = 1e-6);
 
     assert_relative_eq!(mult_g[0], -5.522936e-01, max_relative = 1e-6);
-    assert_relative_eq!(mult_g[1], 1.614685e-01,  max_relative = 1e-6);
+    assert_relative_eq!(mult_g[1], 1.614685e-01, max_relative = 1e-6);
 
     assert_relative_eq!(mult_x_l[0], 1.087872e+00, max_relative = 1e-6);
     assert_relative_eq!(mult_x_l[1], 4.635819e-09, max_relative = 1e-6);
@@ -294,11 +301,7 @@ fn hs071_warm_start_test() {
     ipopt.set_intermediate_callback(Some(NLP::count_iterations_cb));
     {
         let SolveResult {
-            solver_data:
-                SolverDataMut {
-                    problem,
-                    solution,
-                },
+            solver_data: SolverDataMut { problem, solution },
             status,
             objective_value,
             ..
@@ -319,7 +322,7 @@ fn hs071_warm_start_test() {
         assert_relative_eq!(x[3], 1.379408e+00, max_relative = 1e-6);
 
         assert_relative_eq!(mult_g[0], -5.522937e-01, max_relative = 1e-6);
-        assert_relative_eq!(mult_g[1], 1.614686e-01,  max_relative = 1e-6);
+        assert_relative_eq!(mult_g[1], 1.614686e-01, max_relative = 1e-6);
 
         assert_relative_eq!(mult_x_l[0], 1.087871e+00, max_relative = 1e-6);
         assert_relative_eq!(mult_x_l[1], 2.671608e-12, max_relative = 1e-6);
@@ -343,11 +346,7 @@ fn hs071_warm_start_test() {
     ipopt.set_intermediate_callback(Some(NLP::count_iterations_cb));
     {
         let SolveResult {
-            solver_data:
-                SolverDataMut {
-                    problem,
-                    solution
-                },
+            solver_data: SolverDataMut { problem, solution },
             status,
             objective_value: obj,
             ..
@@ -368,7 +367,7 @@ fn hs071_warm_start_test() {
         assert_relative_eq!(x[3], 1.367870e+00, max_relative = 1e-6);
 
         assert_relative_eq!(mult_g[0], -5.517016e-01, max_relative = 1e-6);
-        assert_relative_eq!(mult_g[1], 1.592915e-01,  max_relative = 1e-6);
+        assert_relative_eq!(mult_g[1], 1.592915e-01, max_relative = 1e-6);
 
         assert_relative_eq!(mult_x_l[0], 1.090362e+00, max_relative = 1e-6);
         assert_relative_eq!(mult_x_l[1], 2.664877e-12, max_relative = 1e-6);
@@ -387,10 +386,7 @@ fn hs071_warm_start_test() {
     // Solve one more time time
     {
         let SolveResult {
-            solver_data: SolverDataMut {
-                problem,
-                ..
-            },
+            solver_data: SolverDataMut { problem, .. },
             status,
             objective_value: obj,
             ..
@@ -414,12 +410,13 @@ fn hs071_custom_scaling_test() {
         solver_data:
             SolverDataMut {
                 problem,
-                solution: Solution {
-                    primal_variables: x,
-                    constraint_multipliers: mult_g,
-                    lower_bound_multipliers: mult_x_l,
-                    upper_bound_multipliers: mult_x_u,
-                },
+                solution:
+                    Solution {
+                        primal_variables: x,
+                        constraint_multipliers: mult_g,
+                        lower_bound_multipliers: mult_x_l,
+                        upper_bound_multipliers: mult_x_u,
+                    },
             },
         status,
         objective_value: obj,
@@ -440,17 +437,67 @@ fn hs071_custom_scaling_test() {
     assert_relative_eq!(x[2], 3.817510e+00, max_relative = 1e-6, epsilon = 1e-21);
     assert_relative_eq!(x[3], 1.367870e+00, max_relative = 1e-6, epsilon = 1e-21);
 
-    assert_relative_eq!(mult_g[0], -5.517016e-01, max_relative = 1e-6, epsilon = 1e-21);
-    assert_relative_eq!(mult_g[1], 1.592915e-01,  max_relative = 1e-6, epsilon = 1e-21);
+    assert_relative_eq!(
+        mult_g[0],
+        -5.517016e-01,
+        max_relative = 1e-6,
+        epsilon = 1e-21
+    );
+    assert_relative_eq!(
+        mult_g[1],
+        1.592915e-01,
+        max_relative = 1e-6,
+        epsilon = 1e-21
+    );
 
-    assert_relative_eq!(mult_x_l[0], 1.090362e+00, max_relative = 1e-6, epsilon = 1e-21);
-    assert_relative_eq!(mult_x_l[1], 2.667187e-15, max_relative = 1e-6, epsilon = 1e-21);
-    assert_relative_eq!(mult_x_l[2], 3.549235e-15, max_relative = 1e-6, epsilon = 1e-21);
-    assert_relative_eq!(mult_x_l[3], 2.718350e-14, max_relative = 1e-6, epsilon = 1e-21);
-    assert_relative_eq!(mult_x_u[0], 2.500000e-15, max_relative = 1e-6, epsilon = 1e-21);
-    assert_relative_eq!(mult_x_u[1], 3.988338e-14, max_relative = 1e-6, epsilon = 1e-21);
-    assert_relative_eq!(mult_x_u[2], 8.456721e-15, max_relative = 1e-6, epsilon = 1e-21);
-    assert_relative_eq!(mult_x_u[3], 2.753206e-15, max_relative = 1e-6, epsilon = 1e-21);
+    assert_relative_eq!(
+        mult_x_l[0],
+        1.090362e+00,
+        max_relative = 1e-6,
+        epsilon = 1e-21
+    );
+    assert_relative_eq!(
+        mult_x_l[1],
+        2.667187e-15,
+        max_relative = 1e-6,
+        epsilon = 1e-21
+    );
+    assert_relative_eq!(
+        mult_x_l[2],
+        3.549235e-15,
+        max_relative = 1e-6,
+        epsilon = 1e-21
+    );
+    assert_relative_eq!(
+        mult_x_l[3],
+        2.718350e-14,
+        max_relative = 1e-6,
+        epsilon = 1e-21
+    );
+    assert_relative_eq!(
+        mult_x_u[0],
+        2.500000e-15,
+        max_relative = 1e-6,
+        epsilon = 1e-21
+    );
+    assert_relative_eq!(
+        mult_x_u[1],
+        3.988338e-14,
+        max_relative = 1e-6,
+        epsilon = 1e-21
+    );
+    assert_relative_eq!(
+        mult_x_u[2],
+        8.456721e-15,
+        max_relative = 1e-6,
+        epsilon = 1e-21
+    );
+    assert_relative_eq!(
+        mult_x_u[3],
+        2.753206e-15,
+        max_relative = 1e-6,
+        epsilon = 1e-21
+    );
 
     assert_relative_eq!(obj, 1.690362e+01, max_relative = 1e-6, epsilon = 1e-21);
 }
