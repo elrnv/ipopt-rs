@@ -481,7 +481,8 @@ fn build_and_install_ipopt() -> Result<PathBuf, Error> {
     let proj_root_dir = env::current_dir().unwrap();
     env::set_current_dir(build_dir).unwrap();
 
-    let res = build_with_mkl(&install_dir, debug);
+    let res = build_with_mkl(&install_dir, debug).or_else(|_|
+        build_with_defaults(&install_dir, debug));
 
     // Restore current directory
     env::set_current_dir(proj_root_dir).unwrap();
@@ -526,6 +527,49 @@ fn build_with_mkl(install_dir: &Path, debug: bool) -> Result<(), Error> {
             .arg("--enable-shared")
             .arg("--disable-static")
             .arg(blas.clone());
+
+        if debug {
+            cmd.arg(format!("--enable-debug-ipopt"))
+        } else {
+            cmd
+        }
+    });
+
+    run("make", |cmd| cmd.arg(format!("-j{}", num_cpus::get())));
+    //run("make", |cmd| cmd.arg("test")); // Ensure everything is working
+    run("make", |cmd| cmd.arg("install")); // Install to install_dir
+    Ok(())
+}
+
+// Build Ipopt with Default libs in the current directory.
+fn build_with_defaults(install_dir: &Path, debug: bool) -> Result<(), Error> {
+    let build_dir = env::current_dir().unwrap();
+    let root_dir = build_dir.parent().unwrap().parent().unwrap();
+    let third_party = root_dir.join("ThirdParty");
+    let asl_dir = third_party.join("ASL");
+    let metis_dir = third_party.join("Metis");
+    let mumps_dir = third_party.join("Mumps");
+
+    env::set_current_dir(asl_dir).unwrap();
+    run(env::current_dir()?.join("get.ASL").to_str().unwrap(), |cmd| cmd);
+
+    let set_wget_cmd = "s/wgetcmd=ftp/wgetcmd=\"curl -L -O\"/g";
+
+    env::set_current_dir(metis_dir).unwrap();
+    run("sed", |cmd| cmd.arg("-i~").arg(set_wget_cmd).arg("get.Metis"));
+    run(env::current_dir()?.join("get.Metis").to_str().unwrap(), |cmd| cmd);
+
+    env::set_current_dir(mumps_dir).unwrap();
+    run("sed", |cmd| cmd.arg("-i~").arg(set_wget_cmd).arg("get.Mumps"));
+    run(env::current_dir()?.join("get.Mumps").to_str().unwrap(), |cmd| cmd);
+
+    env::set_current_dir(&build_dir).unwrap();
+
+    run(root_dir.join("configure").to_str().unwrap(), |cmd| {
+        let cmd = cmd
+            .arg(format!("--prefix={}", install_dir.display()))
+            .arg("--enable-shared")
+            .arg("--disable-static");
 
         if debug {
             cmd.arg(format!("--enable-debug-ipopt"))

@@ -252,7 +252,19 @@ fn hs071() -> Ipopt<NLP> {
     ipopt
 }
 
+// NOTE: The reason why all these tests are called here instead of separately is because Rust
+// executes tests in parallel, however, some libraries that Ipopt depends on may be sharing global
+// unsynchronized state as they are not inteded to be run in parallel. I believe MUMPS is the
+// culprit here because these errors dont't appear when Ipopt is linked to MKL/Pardiso. For the
+// time being we will run these from one thread here until we can find a more reliable and easily
+// available replacement for MUMPS (or any other library that has this issue).
 #[test]
+fn all() {
+    hs071_user_interrupt_test();
+    hs071_warm_start_test();
+    hs071_custom_scaling_test();
+}
+
 fn hs071_user_interrupt_test() {
     let mut ipopt = hs071();
     ipopt.set_intermediate_callback(Some(NLP::intermediate_cb));
@@ -298,7 +310,6 @@ fn hs071_user_interrupt_test() {
     assert_relative_eq!(obj, 1.701402e+01, max_relative = 1e-6);
 }
 
-#[test]
 fn hs071_warm_start_test() {
     let mut ipopt = hs071();
     ipopt.set_intermediate_callback(Some(NLP::count_iterations_cb));
@@ -401,7 +412,6 @@ fn hs071_warm_start_test() {
     }
 }
 
-#[test]
 fn hs071_custom_scaling_test() {
     let mut ipopt = hs071();
     ipopt.solver_data_mut().problem.g_offset[0] = 0.2;
