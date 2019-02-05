@@ -1456,6 +1456,8 @@ enum CreateProblemStatus {
     MissingEvalF,
     /// Missing callback for evaluating the gradient of the objective: `eval_grad_f`.
     MissingEvalGradF,
+    /// Inconsistent problem definition.
+    InvalidProblemDefinition,
     /// Unexpected error occured: None of the above. This is likely an internal bug.
     UnknownError,
 }
@@ -1470,6 +1472,8 @@ impl CreateProblemStatus {
             ffi::CNLP_CreateProblemStatus_CNLP_MISSING_BOUNDS => RS::MissingBounds,
             ffi::CNLP_CreateProblemStatus_CNLP_MISSING_EVAL_F => RS::MissingEvalF,
             ffi::CNLP_CreateProblemStatus_CNLP_MISSING_EVAL_GRAD_F => RS::MissingEvalGradF,
+            ffi::CNLP_CreateProblemStatus_CNLP_INVALID_PROBLEM_DEFINITION_ON_CREATE => RS::InvalidProblemDefinition,
+            ffi::CNLP_CreateProblemStatus_CNLP_UNRECOVERABLE_EXCEPTION_ON_CREATE => RS::UnknownError,
             _ => RS::UnknownError,
         }
     }

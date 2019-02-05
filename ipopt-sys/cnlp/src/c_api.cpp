@@ -38,7 +38,7 @@ enum CNLP_CreateProblemStatus cnlp_create_problem(
 
     Ipopt::IpoptApplication *app = new Ipopt::IpoptApplication;
 
-    Ipopt::ApplicationReturnStatus status;
+    CNLP_CreateProblemStatus status = CNLP_SUCCESS;
 
     try {
         // Create the original nlp
@@ -57,17 +57,17 @@ enum CNLP_CreateProblemStatus cnlp_create_problem(
     }
     catch (INVALID_NLP& exc) {
         exc.ReportException(*app->Jnlst(), Ipopt::J_ERROR);
-        status = Ipopt::Invalid_Problem_Definition;
+        status = CNLP_INVALID_PROBLEM_DEFINITION_ON_CREATE;
     }
     catch( Ipopt::IpoptException& exc ) {
         exc.ReportException(*app->Jnlst(), Ipopt::J_ERROR);
-        status = Ipopt::Unrecoverable_Exception;
+        status = CNLP_UNRECOVERABLE_EXCEPTION_ON_CREATE;
     }
 
     app->RethrowNonIpoptException(false);
 
     *out_problem = problem;
-    return CNLP_SUCCESS;
+    return status;
 }
 
 void cnlp_free_problem(CNLP_ProblemPtr problem)

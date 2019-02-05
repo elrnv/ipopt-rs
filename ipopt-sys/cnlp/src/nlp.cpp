@@ -35,6 +35,7 @@ CNLP_ApplicationReturnStatus convert_application_status(Ipopt::ApplicationReturn
         case NonIpopt_Exception_Thrown:         return CNLP_NONIPOPT_EXCEPTION_THROWN;
         case Insufficient_Memory:               return CNLP_INSUFFICIENT_MEMORY;
         case Internal_Error:                    return CNLP_INTERNAL_ERROR;
+        default:                                return CNLP_INTERNAL_ERROR;
     };
 }
 
@@ -43,6 +44,7 @@ CNLP_AlgorithmMode convert_algorithm_mode(Ipopt::AlgorithmMode mode)
     switch (mode) {
         case Ipopt::RegularMode:          return CNLP_REGULAR_MODE;
         case Ipopt::RestorationPhaseMode: return CNLP_RESTORATION_PHASE_MODE;
+        default:                          return CNLP_REGULAR_MODE;
     };
 }
 
