@@ -18,29 +18,30 @@ include!(concat!(env!("OUT_DIR"), "/ipopt_cnlp.rs"));
 
 #[cfg(test)]
 mod tests {
-    use approx::*;
     use super::*;
-    use std::slice;
+    use approx::*;
     use std::ffi::CString;
+    use std::slice;
 
     /// A small structure used to store state between calls to Ipopt NLP callbacks.
     #[derive(Debug)]
     struct UserData {
         g_offset: [CNLP_Number; 2],
     }
-    
+
     /// Test Ipopt raw bindings. This will also serve as an example of the raw C API.
     #[test]
     fn hs071_test() {
         // rough comparator
-        let approx_eq = |a: f64, b: f64| assert_relative_eq!(a, b, max_relative = 1e-6, epsilon = 1e-14);
+        let approx_eq =
+            |a: f64, b: f64| assert_relative_eq!(a, b, max_relative = 1e-6, epsilon = 1e-14);
 
         let mut nlp: CNLP_ProblemPtr = ::std::ptr::null_mut();
         let create_status = unsafe {
             /* create the CNLP_Problem */
             cnlp_create_problem(
                 &mut nlp as *mut CNLP_ProblemPtr,
-                0, 
+                0,
                 Some(sizes),
                 Some(init),
                 Some(bounds),
@@ -49,7 +50,8 @@ mod tests {
                 Some(eval_grad_f),
                 Some(eval_jac_g),
                 Some(eval_h),
-                None)
+                None,
+            )
         };
 
         assert_eq!(create_status, CNLP_CreateProblemStatus_CNLP_SUCCESS);
@@ -70,18 +72,24 @@ mod tests {
             cnlp_set_intermediate_callback(nlp, Some(intermediate_cb));
         }
 
-        let mut user_data = UserData { g_offset: [0.0, 0.0] };
+        let mut user_data = UserData {
+            g_offset: [0.0, 0.0],
+        };
         let udata_ptr = (&mut user_data) as *mut UserData;
 
         /* solve the problem */
         let sol = unsafe {
-            cnlp_solve(nlp,
-                       udata_ptr as CNLP_UserDataPtr, // Pointer to user data. This will be passed unmodified
-                                                 // to the callback functions.
-                       ) // Problem that is to be optimized.
+            cnlp_solve(
+                nlp,
+                udata_ptr as CNLP_UserDataPtr, // Pointer to user data. This will be passed unmodified
+                                               // to the callback functions.
+            ) // Problem that is to be optimized.
         };
 
-        assert_eq!(sol.status, CNLP_ApplicationReturnStatus_CNLP_USER_REQUESTED_STOP);
+        assert_eq!(
+            sol.status,
+            CNLP_ApplicationReturnStatus_CNLP_USER_REQUESTED_STOP
+        );
 
         let m = 2;
         let n = 4;
@@ -122,7 +130,7 @@ mod tests {
         // Now we are going to solve this problem again, but with slightly modified
         // constraints.  We change the constraint offset of the first constraint a bit,
         // and resolve the problem using the warm start option.
-        
+
         user_data.g_offset[0] = 0.2;
 
         let mut warm_start_str = CString::new("warm_start_init_point").unwrap();
@@ -131,15 +139,17 @@ mod tests {
         let mut bound_frac_str = CString::new("bound_frac").unwrap();
 
         unsafe {
-            cnlp_add_str_option(nlp,
-                                   (&mut warm_start_str).as_ptr() as *mut i8,
-                                   (&mut yes_str).as_ptr() as *mut i8);
+            cnlp_add_str_option(
+                nlp,
+                (&mut warm_start_str).as_ptr() as *mut i8,
+                (&mut yes_str).as_ptr() as *mut i8,
+            );
             cnlp_add_num_option(nlp, (&mut bound_push_str).as_ptr() as *mut i8, 1e-5);
             cnlp_add_num_option(nlp, (&mut bound_frac_str).as_ptr() as *mut i8, 1e-5);
             cnlp_set_intermediate_callback(nlp, None);
         }
 
-        let sol = unsafe { cnlp_solve( nlp, udata_ptr as CNLP_UserDataPtr ) };
+        let sol = unsafe { cnlp_solve(nlp, udata_ptr as CNLP_UserDataPtr) };
 
         // Write solutions back to our managed Vecs
         x.copy_from_slice(unsafe { slice::from_raw_parts(sol.data.x, n) });
@@ -148,7 +158,10 @@ mod tests {
         mult_x_L.copy_from_slice(unsafe { slice::from_raw_parts(sol.data.mult_x_L, n) });
         mult_x_U.copy_from_slice(unsafe { slice::from_raw_parts(sol.data.mult_x_U, n) });
 
-        assert_eq!(sol.status, CNLP_ApplicationReturnStatus_CNLP_SOLVE_SUCCEEDED);
+        assert_eq!(
+            sol.status,
+            CNLP_ApplicationReturnStatus_CNLP_SOLVE_SUCCEEDED
+        );
 
         approx_eq(x[0], 1.000000e+00);
         approx_eq(x[1], 4.749269e+00);
@@ -170,7 +183,9 @@ mod tests {
         approx_eq(sol.obj_val, 1.690362e+01);
 
         /* free allocated memory */
-        unsafe { cnlp_free_problem(nlp); }
+        unsafe {
+            cnlp_free_problem(nlp);
+        }
     }
 
     /* Function Implementations */
@@ -179,8 +194,8 @@ mod tests {
         m: *mut CNLP_Index,
         nnz_jac_g: *mut CNLP_Index,
         nnz_h_lag: *mut CNLP_Index,
-        _user_data: CNLP_UserDataPtr) -> CNLP_Bool
-    {
+        _user_data: CNLP_UserDataPtr,
+    ) -> CNLP_Bool {
         *n = 4; // CNLP_Number of variables
         *m = 2; // CNLP_Number of constraints
         *nnz_jac_g = 8; // CNLP_Number of jacobian non-zeros
@@ -198,8 +213,8 @@ mod tests {
         m: CNLP_Index,
         init_lambda: CNLP_Bool,
         lambda: *mut CNLP_Number,
-        _user_data: CNLP_UserDataPtr) -> CNLP_Bool
-    {
+        _user_data: CNLP_UserDataPtr,
+    ) -> CNLP_Bool {
         assert_eq!(n, 4);
         assert_eq!(m, 2);
         if init_x != 0 {
@@ -230,23 +245,24 @@ mod tests {
         m: CNLP_Index,
         g_l: *mut CNLP_Number,
         g_u: *mut CNLP_Number,
-        _user_data: CNLP_UserDataPtr) -> CNLP_Bool {
-      assert!(n == 4);
-      assert!(m == 2);
+        _user_data: CNLP_UserDataPtr,
+    ) -> CNLP_Bool {
+        assert!(n == 4);
+        assert!(m == 2);
 
-      /* Set the values of the constraint bounds */
-      *g_l.offset(0) = 25.0;
-      *g_l.offset(1) = 40.0;
-      *g_u.offset(0) = 2.0e19;
-      *g_u.offset(1) = 40.0; 
+        /* Set the values of the constraint bounds */
+        *g_l.offset(0) = 25.0;
+        *g_l.offset(1) = 40.0;
+        *g_u.offset(0) = 2.0e19;
+        *g_u.offset(1) = 40.0;
 
-      /* Set the values for the variable bounds */
-      for i in 0..n as isize {
-          *x_l.offset(i) = 1.0;
-          *x_u.offset(i) = 5.0;
-      }
+        /* Set the values for the variable bounds */
+        for i in 0..n as isize {
+            *x_l.offset(i) = 1.0;
+            *x_u.offset(i) = 5.0;
+        }
 
-      true as CNLP_Bool
+        true as CNLP_Bool
     }
 
     unsafe extern "C" fn eval_f(
@@ -254,13 +270,14 @@ mod tests {
         x: *const CNLP_Number,
         _new_x: CNLP_Bool,
         obj_value: *mut CNLP_Number,
-        _user_data: CNLP_UserDataPtr) -> CNLP_Bool {
-      assert!(n == 4);
+        _user_data: CNLP_UserDataPtr,
+    ) -> CNLP_Bool {
+        assert!(n == 4);
 
-      *obj_value = *x.offset(0) * *x.offset(3)
-          * (*x.offset(0) + *x.offset(1) + *x.offset(2)) + *x.offset(2);
+        *obj_value = *x.offset(0) * *x.offset(3) * (*x.offset(0) + *x.offset(1) + *x.offset(2))
+            + *x.offset(2);
 
-      true as CNLP_Bool
+        true as CNLP_Bool
     }
 
     unsafe extern "C" fn eval_grad_f(
@@ -268,16 +285,17 @@ mod tests {
         x: *const CNLP_Number,
         _new_x: CNLP_Bool,
         grad_f: *mut CNLP_Number,
-        _user_data: CNLP_UserDataPtr) -> CNLP_Bool {
-      assert!(n == 4);
+        _user_data: CNLP_UserDataPtr,
+    ) -> CNLP_Bool {
+        assert!(n == 4);
 
-      *grad_f.offset(0) = *x.offset(0) * *x.offset(3)
-          + *x.offset(3) * (*x.offset(0) + *x.offset(1) + *x.offset(2));
-      *grad_f.offset(1) = *x.offset(0) * *x.offset(3);
-      *grad_f.offset(2) = *x.offset(0) * *x.offset(3) + 1.0;
-      *grad_f.offset(3) = *x.offset(0) * (*x.offset(0) + *x.offset(1) + *x.offset(2));
+        *grad_f.offset(0) = *x.offset(0) * *x.offset(3)
+            + *x.offset(3) * (*x.offset(0) + *x.offset(1) + *x.offset(2));
+        *grad_f.offset(1) = *x.offset(0) * *x.offset(3);
+        *grad_f.offset(2) = *x.offset(0) * *x.offset(3) + 1.0;
+        *grad_f.offset(3) = *x.offset(0) * (*x.offset(0) + *x.offset(1) + *x.offset(2));
 
-      true as CNLP_Bool
+        true as CNLP_Bool
     }
 
     unsafe extern "C" fn eval_g(
@@ -286,20 +304,23 @@ mod tests {
         _new_x: CNLP_Bool,
         m: CNLP_Index,
         g: *mut CNLP_Number,
-        user_data_ptr: CNLP_UserDataPtr) -> CNLP_Bool {
-      //struct MyUserData* my_data = user_data;
+        user_data_ptr: CNLP_UserDataPtr,
+    ) -> CNLP_Bool {
+        //struct MyUserData* my_data = user_data;
 
-      assert!(n == 4);
-      assert!(m == 2);
+        assert!(n == 4);
+        assert!(m == 2);
 
-      let user_data = &*(user_data_ptr as *mut UserData);
-      *g.offset(0) = *x.offset(0) * *x.offset(1) * *x.offset(2) * *x.offset(3) + user_data.g_offset[0];
-      *g.offset(1) = *x.offset(0) * *x.offset(0)
-          + *x.offset(1) * *x.offset(1)
-          + *x.offset(2) * *x.offset(2)
-          + *x.offset(3) * *x.offset(3) + user_data.g_offset[1];
+        let user_data = &*(user_data_ptr as *mut UserData);
+        *g.offset(0) =
+            *x.offset(0) * *x.offset(1) * *x.offset(2) * *x.offset(3) + user_data.g_offset[0];
+        *g.offset(1) = *x.offset(0) * *x.offset(0)
+            + *x.offset(1) * *x.offset(1)
+            + *x.offset(2) * *x.offset(2)
+            + *x.offset(3) * *x.offset(3)
+            + user_data.g_offset[1];
 
-      true as CNLP_Bool
+        true as CNLP_Bool
     }
 
     unsafe extern "C" fn eval_jac_g(
@@ -311,43 +332,43 @@ mod tests {
         iRow: *mut CNLP_Index,
         jCol: *mut CNLP_Index,
         values: *mut CNLP_Number,
-        _user_data: CNLP_UserDataPtr) -> CNLP_Bool {
-      if values.is_null() {
-        /* return the structure of the jacobian */
+        _user_data: CNLP_UserDataPtr,
+    ) -> CNLP_Bool {
+        if values.is_null() {
+            /* return the structure of the jacobian */
 
-        /* this particular jacobian is dense */
-        *iRow.offset(0) = 0;
-        *jCol.offset(0) = 0;
-        *iRow.offset(1) = 0;
-        *jCol.offset(1) = 1;
-        *iRow.offset(2) = 0;
-        *jCol.offset(2) = 2;
-        *iRow.offset(3) = 0;
-        *jCol.offset(3) = 3;
-        *iRow.offset(4) = 1;
-        *jCol.offset(4) = 0;
-        *iRow.offset(5) = 1;
-        *jCol.offset(5) = 1;
-        *iRow.offset(6) = 1;
-        *jCol.offset(6) = 2;
-        *iRow.offset(7) = 1;
-        *jCol.offset(7) = 3;
-      }
-      else {
-        /* return the values of the jacobian of the constraints */
+            /* this particular jacobian is dense */
+            *iRow.offset(0) = 0;
+            *jCol.offset(0) = 0;
+            *iRow.offset(1) = 0;
+            *jCol.offset(1) = 1;
+            *iRow.offset(2) = 0;
+            *jCol.offset(2) = 2;
+            *iRow.offset(3) = 0;
+            *jCol.offset(3) = 3;
+            *iRow.offset(4) = 1;
+            *jCol.offset(4) = 0;
+            *iRow.offset(5) = 1;
+            *jCol.offset(5) = 1;
+            *iRow.offset(6) = 1;
+            *jCol.offset(6) = 2;
+            *iRow.offset(7) = 1;
+            *jCol.offset(7) = 3;
+        } else {
+            /* return the values of the jacobian of the constraints */
 
-        *values.offset(0) = *x.offset(1)**x.offset(2)**x.offset(3); /* 0,0 */
-        *values.offset(1) = *x.offset(0)**x.offset(2)**x.offset(3); /* 0,1 */
-        *values.offset(2) = *x.offset(0)**x.offset(1)**x.offset(3); /* 0,2 */
-        *values.offset(3) = *x.offset(0)**x.offset(1)**x.offset(2); /* 0,3 */
+            *values.offset(0) = *x.offset(1) * *x.offset(2) * *x.offset(3); /* 0,0 */
+            *values.offset(1) = *x.offset(0) * *x.offset(2) * *x.offset(3); /* 0,1 */
+            *values.offset(2) = *x.offset(0) * *x.offset(1) * *x.offset(3); /* 0,2 */
+            *values.offset(3) = *x.offset(0) * *x.offset(1) * *x.offset(2); /* 0,3 */
 
-        *values.offset(4) = 2.0 * *x.offset(0);         /* 1,0 */
-        *values.offset(5) = 2.0 * *x.offset(1);         /* 1,1 */
-        *values.offset(6) = 2.0 * *x.offset(2);         /* 1,2 */
-        *values.offset(7) = 2.0 * *x.offset(3);         /* 1,3 */
-      }
+            *values.offset(4) = 2.0 * *x.offset(0); /* 1,0 */
+            *values.offset(5) = 2.0 * *x.offset(1); /* 1,1 */
+            *values.offset(6) = 2.0 * *x.offset(2); /* 1,2 */
+            *values.offset(7) = 2.0 * *x.offset(3); /* 1,3 */
+        }
 
-     true as CNLP_Bool 
+        true as CNLP_Bool
     }
 
     unsafe extern "C" fn eval_h(
@@ -362,65 +383,63 @@ mod tests {
         iRow: *mut CNLP_Index,
         jCol: *mut CNLP_Index,
         values: *mut CNLP_Number,
-        _user_data: CNLP_UserDataPtr) -> CNLP_Bool {
+        _user_data: CNLP_UserDataPtr,
+    ) -> CNLP_Bool {
+        if values.is_null() {
+            /* return the structure. This is a symmetric matrix, fill the lower left
+             * triangle only. */
 
-      if values.is_null() {
-        /* return the structure. This is a symmetric matrix, fill the lower left
-         * triangle only. */
+            /* the hessian for this problem is actually dense */
+            let mut idx = 0; /* nonzero element counter */
+            for row in 0..4 {
+                for col in 0..row + 1 {
+                    *iRow.offset(idx) = row;
+                    *jCol.offset(idx) = col;
+                    idx += 1;
+                }
+            }
 
-        /* the hessian for this problem is actually dense */
-        let mut idx = 0;  /* nonzero element counter */
-        for row in 0..4 {
-          for col in 0..row+1 {
-            *iRow.offset(idx) = row;
-            *jCol.offset(idx) = col;
-            idx += 1;
-          }
+            assert!(idx == nele_hess as isize);
+        } else {
+            /* return the values. This is a symmetric matrix, fill the lower left
+             * triangle only */
+
+            /* fill the objective portion */
+            *values.offset(0) = obj_factor * (2.0 * *x.offset(3)); /* 0,0 */
+
+            *values.offset(1) = obj_factor * (*x.offset(3)); /* 1,0 */
+            *values.offset(2) = 0.0; /* 1,1 */
+
+            *values.offset(3) = obj_factor * (*x.offset(3)); /* 2,0 */
+            *values.offset(4) = 0.0; /* 2,1 */
+            *values.offset(5) = 0.0; /* 2,2 */
+
+            *values.offset(6) = obj_factor * (2.0 * *x.offset(0) + *x.offset(1) + *x.offset(2)); /* 3,0 */
+            *values.offset(7) = obj_factor * (*x.offset(0)); /* 3,1 */
+            *values.offset(8) = obj_factor * (*x.offset(0)); /* 3,2 */
+            *values.offset(9) = 0.0; /* 3,3 */
+
+            /* add the portion for the first constraint */
+            *values.offset(1) += *lambda.offset(0) * (*x.offset(2) * *x.offset(3)); /* 1,0 */
+
+            *values.offset(3) += *lambda.offset(0) * (*x.offset(1) * *x.offset(3)); /* 2,0 */
+            *values.offset(4) += *lambda.offset(0) * (*x.offset(0) * *x.offset(3)); /* 2,1 */
+
+            *values.offset(6) += *lambda.offset(0) * (*x.offset(1) * *x.offset(2)); /* 3,0 */
+            *values.offset(7) += *lambda.offset(0) * (*x.offset(0) * *x.offset(2)); /* 3,1 */
+            *values.offset(8) += *lambda.offset(0) * (*x.offset(0) * *x.offset(1)); /* 3,2 */
+
+            /* add the portion for the second constraint */
+            *values.offset(0) += *lambda.offset(1) * 2.0; /* 0,0 */
+
+            *values.offset(2) += *lambda.offset(1) * 2.0; /* 1,1 */
+
+            *values.offset(5) += *lambda.offset(1) * 2.0; /* 2,2 */
+
+            *values.offset(9) += *lambda.offset(1) * 2.0; /* 3,3 */
         }
 
-        assert!(idx == nele_hess as isize);
-      }
-      else {
-        /* return the values. This is a symmetric matrix, fill the lower left
-         * triangle only */
-
-        /* fill the objective portion */
-        *values.offset(0) = obj_factor * (2.0 * *x.offset(3));               /* 0,0 */
-
-        *values.offset(1) = obj_factor * (*x.offset(3));                 /* 1,0 */
-        *values.offset(2) = 0.0;                                   /* 1,1 */
-
-        *values.offset(3) = obj_factor * (*x.offset(3));                 /* 2,0 */
-        *values.offset(4) = 0.0;                                   /* 2,1 */
-        *values.offset(5) = 0.0;                                   /* 2,2 */
-
-        *values.offset(6) = obj_factor * (2.0 * *x.offset(0) + *x.offset(1) + *x.offset(2)); /* 3,0 */
-        *values.offset(7) = obj_factor * (*x.offset(0));                 /* 3,1 */
-        *values.offset(8) = obj_factor * (*x.offset(0));                 /* 3,2 */
-        *values.offset(9) = 0.0;                                   /* 3,3 */
-
-
-        /* add the portion for the first constraint */
-        *values.offset(1) += *lambda.offset(0) * (*x.offset(2) * *x.offset(3));          /* 1,0 */
-
-        *values.offset(3) += *lambda.offset(0) * (*x.offset(1) * *x.offset(3));          /* 2,0 */
-        *values.offset(4) += *lambda.offset(0) * (*x.offset(0) * *x.offset(3));          /* 2,1 */
-
-        *values.offset(6) += *lambda.offset(0) * (*x.offset(1) * *x.offset(2));          /* 3,0 */
-        *values.offset(7) += *lambda.offset(0) * (*x.offset(0) * *x.offset(2));          /* 3,1 */
-        *values.offset(8) += *lambda.offset(0) * (*x.offset(0) * *x.offset(1));          /* 3,2 */
-
-        /* add the portion for the second constraint */
-        *values.offset(0) += *lambda.offset(1) * 2.0;                      /* 0,0 */
-
-        *values.offset(2) += *lambda.offset(1) * 2.0;                      /* 1,1 */
-
-        *values.offset(5) += *lambda.offset(1) * 2.0;                      /* 2,2 */
-
-        *values.offset(9) += *lambda.offset(1) * 2.0;                      /* 3,3 */
-      }
-
-      true as CNLP_Bool
+        true as CNLP_Bool
     }
 
     extern "C" fn intermediate_cb(
@@ -435,11 +454,12 @@ mod tests {
         _alpha_du: CNLP_Number,
         _alpha_pr: CNLP_Number,
         _ls_trials: CNLP_Index,
-        _user_data: CNLP_UserDataPtr) -> CNLP_Bool {
-      if inf_pr < 1e-4 {
-          false as CNLP_Bool
-      } else {
-          true as CNLP_Bool
-      }
+        _user_data: CNLP_UserDataPtr,
+    ) -> CNLP_Bool {
+        if inf_pr < 1e-4 {
+            false as CNLP_Bool
+        } else {
+            true as CNLP_Bool
+        }
     }
 }
