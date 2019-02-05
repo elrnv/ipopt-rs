@@ -61,8 +61,9 @@ impl BasicProblem for NLP {
     }
 
     // Set the initial conditions for the solver.
-    fn initial_point(&self, x: &mut [Number]) {
+    fn initial_point(&self, x: &mut [Number]) -> bool {
         x.swap_with_slice(vec![0.0, 0.0].as_mut_slice());
+        true
     }
 
     // The objective to be minimized.
