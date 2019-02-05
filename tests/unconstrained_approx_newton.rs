@@ -50,8 +50,9 @@ impl BasicProblem for NLP {
         x_u.swap_with_slice(vec![1e20; 2].as_mut_slice());
         true
     }
-    fn initial_point(&self, x: &mut [Number]) {
+    fn initial_point(&self, x: &mut [Number]) -> bool {
         x.copy_from_slice(&self.x_start);
+        true
     }
     fn objective(&self, x: &[Number], obj: &mut Number) -> bool {
         *obj = (x[0] - 1.0) * (x[0] - 1.0) + (x[1] - 1.0) * (x[1] - 1.0);

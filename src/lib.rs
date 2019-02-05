@@ -72,8 +72,9 @@
  *     }
  *
  *     // Set the initial conditions for the solver.
- *     fn initial_point(&self, x: &mut [Number]) {
+ *     fn initial_point(&self, x: &mut [Number]) -> bool {
  *         x.swap_with_slice(vec![0.0, 0.0].as_mut_slice());
+ *         true
  *     }
  *
  *     // The objective to be minimized.
@@ -132,7 +133,8 @@ use std::slice;
 /// In the callbacks within, `x` is the independent variable and must be the same size
 /// as returned by `num_variables`.
 /// Each of the callbacks required during interior point iterations are allowed to fail.
-/// In case of failure to produce values, simply return `false` where applicable.
+/// In case of failure to produce values, simply return `false` where applicable. If the caller
+/// returns `true` but the output data was not set, then Ipopt may produce undefined behaviour.
 /// This feature could be used to tell Ipopt to try smaller perturbations for `x` for
 /// instance.
 pub trait BasicProblem {
@@ -150,19 +152,26 @@ pub trait BasicProblem {
 
     /// Construct the initial guess of the primal variables for Ipopt to start with.
     /// The given slice has the same size as `num_variables`.
-    fn initial_point(&self, x: &mut [Number]);
+    ///
+    /// This function should return whether the output slice `x` has been populated with initial
+    /// values. If this function returns `false`, then a zero initial guess will be used.
+    fn initial_point(&self, x: &mut [Number]) -> bool;
 
     /// Construct the initial guess of the lower and upper bounds multipliers for Ipopt to start with.
     /// The given slices has the same size as `num_variables`.
     /// Note that multipliers for infinity bounds are ignored.
     ///
+    /// This function should return whether the output slices `z_l` and `z_u` have been populated
+    /// with initial values. If this function returns `false`, then a zero initial guess will be used.
+    ///
     /// For convenience, the default implementation initializes bounds multipliers to zero. This is
     /// a good guess for any initial point in the interior of the feasible region.
-    fn initial_bounds_multipliers(&self, z_l: &mut [Number], z_u: &mut [Number]) {
+    fn initial_bounds_multipliers(&self, z_l: &mut [Number], z_u: &mut [Number]) -> bool {
         for (l, u) in z_l.iter_mut().zip(z_u.iter_mut()) {
             *l = 0.0;
             *u = 0.0;
         }
+        true
     }
 
     /// Objective function. This is the function being minimized.
@@ -245,12 +254,16 @@ pub trait ConstrainedProblem: BasicProblem {
     /// Construct the initial guess of the constraint multipliers for Ipopt to start with.
     /// The given slice has the same size as `num_constraints`.
     ///
+    /// This function should return whether the output slice `lambda` has been populated with
+    /// initial values. If this function returns `false`, then a zero initial guess will be used.
+    ///
     /// For convenience, the default implementation initializes constraint multipliers to zero.
     /// This is a good guess for any initial point in the interior of the feasible region.
-    fn initial_constraint_multipliers(&self, lambda: &mut [Number]) {
+    fn initial_constraint_multipliers(&self, lambda: &mut [Number]) -> bool {
         for l in lambda.iter_mut() {
             *l = 0.0;
         }
+        true
     }
     /// Constraint Jacobian indices. These are the row and column indices of the
     /// non-zeros in the sparse representation of the matrix.
@@ -701,13 +714,17 @@ impl<P: BasicProblem> Ipopt<P> {
         assert_eq!(m, 0);
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
         if init_x != 0 {
-            nlp.initial_point(slice::from_raw_parts_mut(x, n as usize));
+            let x = slice::from_raw_parts_mut(x, n as usize);
+            if !nlp.initial_point(x) {
+                for i in 0..n as usize { x[i] = 0.0; } // initialize to zero!
+            }
         }
         if init_z != 0 {
-            nlp.initial_bounds_multipliers(
-                slice::from_raw_parts_mut(z_l, n as usize),
-                slice::from_raw_parts_mut(z_u, n as usize),
-            );
+            let z_l = slice::from_raw_parts_mut(z_l, n as usize);
+            let z_u = slice::from_raw_parts_mut(z_u, n as usize);
+            if !nlp.initial_bounds_multipliers(z_l, z_u) {
+                for i in 0..n as usize { z_l[i] = 0.0; z_u[i] = 0.0; } // initialize to zero!
+            }
         }
         true as Bool
     }
@@ -1051,16 +1068,23 @@ impl<P: ConstrainedProblem> Ipopt<P> {
     ) -> Bool {
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
         if init_x != 0 {
-            nlp.initial_point(slice::from_raw_parts_mut(x, n as usize));
+            let x = slice::from_raw_parts_mut(x, n as usize);
+            if !nlp.initial_point(x) {
+                for i in 0..n as usize { x[i] = 0.0; } // initialize to zero!
+            }
         }
         if init_z != 0 {
-            nlp.initial_bounds_multipliers(
-                slice::from_raw_parts_mut(z_l, n as usize),
-                slice::from_raw_parts_mut(z_u, n as usize),
-            );
+            let z_l = slice::from_raw_parts_mut(z_l, n as usize);
+            let z_u = slice::from_raw_parts_mut(z_u, n as usize);
+            if !nlp.initial_bounds_multipliers(z_l, z_u) {
+                for i in 0..n as usize { z_l[i] = 0.0; z_u[i] = 0.0; } // initialize to zero!
+            }
         }
         if init_lambda != 0 {
-            nlp.initial_constraint_multipliers(slice::from_raw_parts_mut(lambda, m as usize));
+            let lambda = slice::from_raw_parts_mut(lambda, m as usize);
+            if !nlp.initial_constraint_multipliers(lambda) {
+                for i in 0..m as usize { lambda[i] = 0.0; } // initialize to zero!
+            }
         }
         true as Bool
     }
@@ -1472,8 +1496,9 @@ mod tests {
             x_u.copy_from_slice(&self.upper);
             true
         }
-        fn initial_point(&self, x: &mut [Number]) {
+        fn initial_point(&self, x: &mut [Number]) -> bool {
             x.copy_from_slice(&self.init_point);
+            true
         }
         fn objective(&self, _: &[Number], _: &mut Number) -> bool {
             true
@@ -1529,8 +1554,9 @@ mod tests {
             x_u.copy_from_slice(&self.upper);
             true
         }
-        fn initial_point(&self, x: &mut [Number]) {
+        fn initial_point(&self, x: &mut [Number]) -> bool {
             x.copy_from_slice(&self.init_point.clone());
+            true
         }
         fn objective(&self, _: &[Number], _: &mut Number) -> bool {
             true

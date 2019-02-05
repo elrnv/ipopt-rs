@@ -73,16 +73,17 @@ impl BasicProblem for NLP {
         x_u.swap_with_slice(vec![5.0; 4].as_mut_slice());
         true
     }
-    fn initial_point(&self, x: &mut [Number]) {
+    fn initial_point(&self, x: &mut [Number]) -> bool {
         x.copy_from_slice(&self.x_start);
+        true
     }
-    fn initial_bounds_multipliers(&self, z_l: &mut [Number], z_u: &mut [Number]) {
-        if self.z_l_start.len() == 4 {
+    fn initial_bounds_multipliers(&self, z_l: &mut [Number], z_u: &mut [Number]) -> bool {
+        if self.z_l_start.len() == 4 && self.z_u_start.len() == 4 {
             z_l.copy_from_slice(&self.z_l_start);
-        }
-        if self.z_u_start.len() == 4 {
             z_u.copy_from_slice(&self.z_u_start);
+            return true;
         }
+        false
     }
     fn objective(&self, x: &[Number], obj: &mut Number) -> bool {
         *obj = x[0] * x[3] * (x[0] + x[1] + x[2]) + x[2];
@@ -216,10 +217,12 @@ impl ConstrainedProblem for NLP {
         true
     }
 
-    fn initial_constraint_multipliers(&self, lambda: &mut [Number]) {
+    fn initial_constraint_multipliers(&self, lambda: &mut [Number]) -> bool {
         if self.lambda_start.len() == 2 {
             lambda.copy_from_slice(&self.lambda_start);
+            return true;
         }
+        false
     }
 
     // The following callback is activated only when `nlp_scaling_method` is set to

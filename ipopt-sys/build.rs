@@ -58,6 +58,8 @@ const BINARY_DL_URL: &str = "https://github.com/JuliaOpt/IpoptBuilder/releases/d
 mod platform {
     pub static LIB_EXT: &str = "dylib";
     pub static BINARY_SUFFIX: &str = "x86_64-apple-darwin14.tar.gz";
+    pub static BINARY_MD5: &str = "59825a6b7e40929ff2c88fb23dc82b7c";
+    pub static BINARY_SHA1: &str = "a24f1def1ce9fc33393779b574cea9bfb4765c4f";
 }
 
 #[cfg(target_os = "linux")]
@@ -217,8 +219,8 @@ fn download_and_install_prebuilt_binary() -> Result<PathBuf, Error> {
     let lib_dir = install_dir.join("lib");
     let library_path = lib_dir.join(&library_file);
     if library_path.exists() {
-        println!("File {} already exists, deleting.", library_path.display());
-        fs::remove_file(&library_path).unwrap();
+        // Nothing to be done, library is already installed
+        return Ok(install_dir);
     }
 
     // On unix make sure all artifacts are removed to cleanup the environment
@@ -387,8 +389,8 @@ fn build_and_install_ipopt() -> Result<PathBuf, Error> {
     let library_file = format!("lib{}.{}", LIBRARY, LIB_EXT);
     let library_path = install_dir.join("lib").join(&library_file);
     if library_path.exists() {
-        println!("File {} already exists, deleting.", library_path.display());
-        fs::remove_file(&library_path).unwrap();
+        // Nothing to be done, library is already installed.
+        return Ok(install_dir);
     }
 
     // Build destination path
@@ -454,7 +456,8 @@ fn build_ipopt(install_dir: &Path, debug: bool) -> Result<(), Error> {
         }
     };
 
-    run(env::current_dir()?.join("configure").to_str().unwrap(), |cmd| {
+    run(env::current_dir()?.parent().unwrap().parent().unwrap()
+        .join("configure").to_str().unwrap(), |cmd| {
         let cmd = cmd
             .arg(format!("--prefix={}", install_dir.display()))
             .arg("--enable-shared")

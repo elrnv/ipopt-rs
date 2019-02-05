@@ -69,10 +69,11 @@ impl BasicProblem for NLP {
         x_u.swap_with_slice(vec![1e20; n].as_mut_slice());
         true
     }
-    fn initial_point(&self, x: &mut [Number]) {
+    fn initial_point(&self, x: &mut [Number]) -> bool {
         let n = x.len();
         assert_eq!(n, self.num_variables());
         x.copy_from_slice(&self.x_start.borrow());
+        true
     }
     fn objective(&self, x: &[Number], obj: &mut Number) -> bool {
         *obj = 0.0;
