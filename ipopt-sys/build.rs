@@ -43,7 +43,8 @@ use lazy_static::lazy_static;
  */
 use std::fs::File;
 use std::io::{BufWriter, Write};
-use std::path::{Path, PathBuf};
+use std::path::{Path, PathBuf, Component};
+use std::ffi::OsStr;
 use std::process::Command;
 use std::{env, fs};
 use tar::Archive;
@@ -106,20 +107,23 @@ lazy_static! {
 }
 
 fn main() {
-    // Try to find Ipopt preinstalled.
-    if let Ok(lib) = pkg_config::Config::new()
-        .atleast_version(MIN_VERSION)
-        .probe(LIBRARY)
-    {
-        dbg!(lib);
-        unimplemented!();
-    }
-
     let mut msg = String::from("\n\n");
+
+    // Try to find Ipopt preinstalled.
+    match try_pkg_config() {
+        Ok(ipopt_install_path) => {
+            link(build_cnlp(ipopt_install_path))
+                .expect("Failed to create bindings for Ipopt library.");
+        }
+        Err(err) => {
+            msg.push_str(&format!("Failed to find Ipopt using pkg-config: {:?}\n\n", err));
+        }
+    }
 
     match build_and_install_ipopt() {
         Ok(ipopt_install_path) => {
-            link(build_cnlp(ipopt_install_path)).expect("Failed to create bindings for Ipopt library.");;
+            link(build_cnlp(ipopt_install_path))
+                .expect("Failed to create bindings for Ipopt library.");
             return;
         }
         Err(err) => {
@@ -142,6 +146,8 @@ fn main() {
 
 #[derive(Clone, Debug, PartialEq)]
 enum Error {
+    PkgConfigNotFound,
+    PkgConfigInvalidInstallPath,
     MKLInstallNotFound,
     DownloadFailure { response_code: u32, url: String },
     UrlFailure,
@@ -187,6 +193,60 @@ fn major_versioned_library_name() -> String {
         format!("lib{}.{}.{}", LIBRARY, LIB_MAJ_VER, LIB_EXT)
     } else {
         format!("lib{}.{}.{}", LIBRARY, LIB_EXT, LIB_MAJ_VER)
+    }
+}
+
+// Try to find ipopt install path from pkg_config.
+fn try_pkg_config() -> Result<PathBuf, Error> {
+    match pkg_config::Config::new()
+        .atleast_version(MIN_VERSION)
+        .probe(LIBRARY)
+    {
+        Ok(lib) => {
+            dbg!(&lib);
+            let ipopt_lib_name = library_name();
+            let mut lib_path = Err(Error::PkgConfigInvalidInstallPath);
+            for path in lib.link_paths.iter() {
+                let candidate_lib = path.join(&ipopt_lib_name);
+                if candidate_lib.exists() {
+                    lib_path = Ok(candidate_lib);
+                    break;
+                }
+            }
+
+            let lib_path = lib_path?;
+
+            let mut include_path = Err(Error::PkgConfigInvalidInstallPath);
+            for path in lib.include_paths.iter() {
+                let candidate_include = path.join("coin");
+                if candidate_include.exists() {
+                    include_path = Ok(candidate_include);
+                    break;
+                }
+            }
+
+            let include_path = include_path?;
+
+            // Extract the common install path.
+            let mut install_path = PathBuf::new();
+            let mut comp_iter = lib_path.components().zip(include_path.components());
+            for (l,i) in &mut comp_iter {
+                if l == i {
+                    install_path.push(l);
+                } else {
+                    break;
+                }
+            }
+
+            // Make sure that the next element gives the include and lib dirs.
+            if comp_iter.next() !=
+                Some((Component::Normal(OsStr::new("lib")), Component::Normal(OsStr::new("include")))) {
+                    Err(Error::PkgConfigInvalidInstallPath)
+            } else {
+                Ok(install_path)
+            }
+        },
+        Err(_) => Err(Error::PkgConfigNotFound),
     }
 }
 
@@ -333,7 +393,7 @@ fn link(cnlp_install_path: PathBuf) -> Result<(), Error> {
 }
 
 /// Download a tarball if it doesn't already exist.
-fn download_tarball(tarball_path: &Path, binary_url: &str, md6: &str, sha1: &str) -> Result<(), Error> {
+fn download_tarball(tarball_path: &Path, binary_url: &str, md5: &str, sha1: &str) -> Result<(), Error> {
     if !tarball_path.exists() {
         let f = File::create(tarball_path).unwrap();
         let mut writer = BufWriter::new(f);
