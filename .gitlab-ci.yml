@@ -6,7 +6,8 @@ rust-latest:
   image: rust:latest
   before_script:
       - apt-get update --yes
-      - apt-get install --yes cmake clang libclang-dev libgfortran5
+      - apt-get install --yes cmake clang libclang-dev
+      - apt-get -t experimental install libgfortran5
   script:
     - cargo build --verbose
     - cargo test --verbose
@@ -16,7 +17,8 @@ rust-nightly:
   image: rustlang/rust:nightly
   before_script:
       - apt-get update --yes
-      - apt-get install --yes cmake clang libclang-dev libgfortran5
+      - apt-get install --yes cmake clang libclang-dev
+      - apt-get -t experimental install libgfortran5
   script:
     - cargo build --verbose
     - cargo test --verbose
