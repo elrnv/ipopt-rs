@@ -27,6 +27,3 @@ cmake = "0.1"
 lazy_static = "1.2"
 num_cpus = "1.9"
 rust-crypto = "0.2"
-
-[profile]
-rpath = true

@@ -14,8 +14,18 @@ set( library_name ipopt_cnlp )
 
 set( CAPI_HEADERS src/c_api.h )
 
-set(CMAKE_SKIP_INSTALL_RPATH FALSE)
-set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
+if (APPLE)
+  # NOTE: The following two lines use @rpath and install an effective install path to LC_RPATH in the
+  # dylib
+  #set(CMAKE_SKIP_INSTALL_RPATH FALSE)
+  #set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
+
+  # Since there are some glitches with reexporting cdylibs within rust for libraries that depend on
+  # other dylibs, we use explicit install names here so that they can be tracked easily.
+  # The downside of this is that now libipopt_cnlp.dylib is largely immobile, however this can be
+  # changed manually with install_name_tool.
+  set( CMAKE_INSTALL_NAME_DIR "${CMAKE_INSTALL_PREFIX}/lib")
+endif(APPLE)
 
 # Add a library and its source files.
 add_library( ${library_name} SHARED
