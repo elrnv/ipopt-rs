@@ -7,7 +7,7 @@ rust-latest:
   before_script:
       - echo "deb http://deb.debian.org/debian experimental main" >> /etc/apt/sources.list
       - apt-get update --yes
-      - apt-get install --yes cmake clang libclang-dev
+      - apt-get install --yes cmake clang libclang-dev libc6
       - apt-get -t experimental install libgfortran5
   script:
     - cargo build --verbose
@@ -19,7 +19,7 @@ rust-nightly:
   before_script:
       - echo "deb http://deb.debian.org/debian experimental main" >> /etc/apt/sources.list
       - apt-get update --yes
-      - apt-get install --yes cmake clang libclang-dev
+      - apt-get install --yes cmake clang libclang-dev libc6
       - apt-get -t experimental install libgfortran5
   script:
     - cargo build --verbose
