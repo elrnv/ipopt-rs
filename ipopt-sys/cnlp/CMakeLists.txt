@@ -14,9 +14,8 @@ set( library_name ipopt_cnlp )
 
 set( CAPI_HEADERS src/c_api.h )
 
-set(CMAKE_SKIP_RPATH TRUE)
-
-#set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
+set(CMAKE_SKIP_INSTALL_RPATH FALSE)
+set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
 
 # Add a library and its source files.
 add_library( ${library_name} SHARED
