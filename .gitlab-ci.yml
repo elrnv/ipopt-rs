@@ -5,10 +5,12 @@ rust-latest:
   stage: build
   image: rust:latest
   before_script:
+      - echo "deb http://deb.debian.org/debian testing main contrib non-free" >> /etc/apt/sources.list
+      - echo "deb-src http://deb.debian.org/debian testing main contrib non-free" >> /etc/apt/sources.list
+      - echo "deb http://security.debian.org testing/updates main contrib non-free" >> /etc/apt/sources.list
       - echo "deb http://deb.debian.org/debian experimental main" >> /etc/apt/sources.list
-      - echo "deb http://security.debian.org testing/updates main" >> /etc/apt/sources.list
       - apt-get update --yes
-      - apt-get -t testing/updates install --yes cmake clang libclang-dev libc6 libgfortran5
+      - apt-get -t testing install --yes cmake clang libclang-dev libc6 libgfortran5
   script:
     - cargo build --verbose
     - cargo test --verbose
@@ -17,10 +19,12 @@ rust-nightly:
   stage: build
   image: rustlang/rust:nightly
   before_script:
+      - echo "deb http://deb.debian.org/debian testing main contrib non-free" >> /etc/apt/sources.list
+      - echo "deb-src http://deb.debian.org/debian testing main contrib non-free" >> /etc/apt/sources.list
+      - echo "deb http://security.debian.org testing/updates main contrib non-free" >> /etc/apt/sources.list
       - echo "deb http://deb.debian.org/debian experimental main" >> /etc/apt/sources.list
-      - echo "deb http://security.debian.org testing/updates main" >> /etc/apt/sources.list
       - apt-get update --yes
-      - apt-get -t testing/updates install --yes cmake clang libclang-dev libc6 libgfortran5
+      - apt-get -t testing install --yes cmake clang libclang-dev libc6 libgfortran5
   script:
     - cargo build --verbose
     - cargo test --verbose
