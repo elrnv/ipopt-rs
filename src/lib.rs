@@ -62,8 +62,8 @@
  *     fn num_variables(&self) -> usize {
  *         2
  *     }    
- *     // The variables are unbounded. Any lower bound lower than -10^9 and upper bound higher
- *     // than 10^9 is treated effectively as infinity. These absolute infinity limits can be
+ *     // The variables are unbounded. Any lower bound lower than -10^19 and upper bound higher
+ *     // than 10^19 is treated effectively as infinity. These absolute infinity limits can be
  *     // changed via the `nlp_lower_bound_inf` and `nlp_upper_bound_inf` Ipopt options.
  *     fn bounds(&self, x_l: &mut [Number], x_u: &mut [Number]) -> bool {
  *         x_l.swap_with_slice(vec![-1e20; 2].as_mut_slice());
@@ -1021,7 +1021,7 @@ impl<P: ConstrainedProblem> Ipopt<P> {
         if (num_constraints > 0 && num_constraint_jac_nnz == 0)
             || (num_constraints == 0 && num_constraint_jac_nnz > 0)
         {
-            return Err(CreateError::InvalidConstraintJacobian);
+            return Err(CreateError::InvalidConstraintJacobian { num_constraints, num_constraint_jac_nnz });
         }
 
         let mut nlp_internal: ffi::CNLP_ProblemPtr = ::std::ptr::null_mut();
@@ -1429,7 +1429,12 @@ pub enum CreateError {
     NoOptimizationVariablesSpecified,
     /// The number of Jacobian elements is non-zero, yet no constraints were provided or
     /// the number of constraints is non-zero, yet no Jacobian elements were provided.
-    InvalidConstraintJacobian,
+    InvalidConstraintJacobian {
+        /// Number of constraints set in the problem.
+        num_constraints: usize,
+        /// Number of constraint jacobian entries specified for the problem.
+        num_constraint_jac_nnz: usize
+    },
     /// Unexpected error occureed: None of the above. This is likely an internal bug.
     Unknown,
 }
@@ -1640,7 +1645,7 @@ mod tests {
         };
         assert_eq!(
             Ipopt::new(nlp3).unwrap_err(),
-            CreateError::InvalidConstraintJacobian
+            CreateError::InvalidConstraintJacobian { num_constraints: 2, num_constraint_jac_nnz: 0 }
         );
 
         let nlp4 = NlpConstrained {
@@ -1651,7 +1656,7 @@ mod tests {
         };
         assert_eq!(
             Ipopt::new(nlp4).unwrap_err(),
-            CreateError::InvalidConstraintJacobian
+            CreateError::InvalidConstraintJacobian { num_constraints: 0, num_constraint_jac_nnz: 8 }
         );
     }
 
