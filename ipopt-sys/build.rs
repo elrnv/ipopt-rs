@@ -620,7 +620,7 @@ fn build_with_default_blas(install_dir: &Path, debug: bool) -> Result<String, Er
 
     let blas_lapack_libs = if cfg!(target_os = "linux") { "-lblas -llapack" } else { "" };
 
-    let mut link_libs = 
+    let link_libs = 
     format!("{link} {inst}/libcoinmumps.a {inst}/libcoinasl.a {inst}/libcoinmetis.a",
             link=blas_lapack_libs, inst=install_dir.join("lib").to_str().unwrap());
 
