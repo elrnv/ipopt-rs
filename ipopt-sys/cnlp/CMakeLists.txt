@@ -10,6 +10,10 @@ set( Ipopt_DIR "NOTFOUND" CACHE STRING "Ipopt install path")
 find_path( Ipopt_INCLUDE_DIR coin/IpIpoptApplication.hpp PATHS ${Ipopt_DIR}/include DOC "Ipopt include directory")
 find_library( Ipopt_LIBRARY ipopt PATHS ${Ipopt_DIR}/lib DOC "Ipopt library")
 
+# Check if there are additional libraries we need to link to after building ipopt statically.
+# In particular this file should set the LINK_LIBS variable.
+include( ${Ipopt_DIR}/link_libs.cmake )
+
 set( library_name ipopt_cnlp )
 
 set( CAPI_HEADERS src/c_api.h )
@@ -37,7 +41,7 @@ add_library( ${library_name} SHARED
 
 # Link against the Houdini libraries, and add required include directories and
 # compile definitions.
-target_link_libraries( ${library_name} ${Ipopt_LIBRARY} )
+target_link_libraries( ${library_name} ${Ipopt_LIBRARY} ${LINK_LIBS})
 
 target_include_directories( ${library_name} PRIVATE ${Ipopt_INCLUDE_DIR} )
 

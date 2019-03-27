@@ -59,6 +59,8 @@ const SOURCE_SHA1: &str = "5eb1aefb2f9acfd8b1b5838370528ac1d73787d6";
 
 #[cfg(target_os = "macos")]
 mod platform {
+    // For some reason I couldn't build and link to Ipopt as a static lib on macos, so this is here.
+    pub static BUILD_FLAGS: [&str; 2] = ["--enable-shared", "--disable-static"];
     pub static LIB_EXT: &str = "dylib";
     pub static BINARY_SUFFIX: &str = "x86_64-apple-darwin14.tar.gz";
     pub static BINARY_MD5: &str = "59825a6b7e40929ff2c88fb23dc82b7c";
@@ -67,7 +69,8 @@ mod platform {
 
 #[cfg(target_os = "linux")]
 mod platform {
-    pub static LIB_EXT: &str = "so";
+    pub static BUILD_FLAGS: [&str; 3] = ["--disable-shared", "--enable-static", "--with-pic"];
+    pub static LIB_EXT: &str = "a";
     pub static BINARY_SUFFIX: &str = "x86_64-linux-gnu-gcc8.tar.gz";
     pub static BINARY_MD5: &str = "9c406cb1b54918b56945548e64b8e9ca";
     pub static BINARY_SHA1: &str = "a940b1f70021ddbd057643a056b61228d68f26e6";
@@ -81,6 +84,7 @@ mod family {
 
 #[cfg(target_os = "windows")]
 mod platform {
+    pub static BUILD_FLAGS: [&str;1] = [""];
     pub static LIB_EXT: &str = "dll";
     pub static BINARY_SUFFIX: &str = "x86_64-w64-mingw32-gcc8.tar.gz";
 }
@@ -183,7 +187,7 @@ fn versioned_library_name() -> String {
     if cfg!(target_os = "macos") {
         format!("lib{}.{}.{}.{}", LIBRARY, LIB_MAJ_VER, LIB_MIN_VER, LIB_EXT)
     } else {
-        format!("lib{}.{}.{}.{}", LIBRARY, LIB_EXT, LIB_MAJ_VER, LIB_MIN_VER)
+        format!("lib{}.{}", LIBRARY, LIB_EXT)
     }
 }
 
@@ -192,7 +196,7 @@ fn major_versioned_library_name() -> String {
     if cfg!(target_os = "macos") {
         format!("lib{}.{}.{}", LIBRARY, LIB_MAJ_VER, LIB_EXT)
     } else {
-        format!("lib{}.{}.{}", LIBRARY, LIB_EXT, LIB_MAJ_VER)
+        format!("lib{}.{}", LIBRARY, LIB_EXT)
     }
 }
 
@@ -480,39 +484,72 @@ fn build_and_install_ipopt() -> Result<PathBuf, Error> {
     // Remember project root directory
     let proj_root_dir = env::current_dir().unwrap();
     env::set_current_dir(build_dir).unwrap();
-
+    
     let res = build_with_mkl(&install_dir, debug).or_else(|_|
-        build_with_defaults(&install_dir, debug));
+        build_with_default_blas(&install_dir, debug));
 
     // Restore current directory
     env::set_current_dir(proj_root_dir).unwrap();
 
-    res?; // Propagate any errors after we have restored the current dir.
+    let link_libs = res?; // Propagate any errors after we have restored the current dir.
+
+    // Generate an additional CMake script for cnlp to link against any additional libs.
+    // This, for instance, depends on whether we link to libipopt statically or dynamically.
+    let mut link_libs_cmake_script = fs::File::create(install_dir.join("link_libs.cmake"))?;
+    write!(&mut link_libs_cmake_script, "cmake_minimum_required(VERSION 3.6)\n\n")?;
+    write!(&mut link_libs_cmake_script, "set(LINK_LIBS \"{}\")", link_libs)?;
 
     Ok(install_dir)
 }
 
+
 // Build Ipopt with MKL in the current directory.
-fn build_with_mkl(install_dir: &Path, debug: bool) -> Result<(), Error> {
+fn build_with_mkl(install_dir: &Path, debug: bool) -> Result<String, Error> {
+    let mkl_libs = ["intel_lp64", "tbb_thread", "core"];
+
     // Look for intel MKL and link to its libraries if found.
-    let mkl_root = PathBuf::from(env::var("MKLROOT").unwrap_or("/opt/intel/mkl".to_string()));
+    let mkl_root = env::var("MKLROOT");
     dbg!(&mkl_root);
+    let mkl_libs_path = if let Ok(mkl_root) = mkl_root {
+        PathBuf::from(mkl_root).join("lib")
+    } else {
+        let opt_path = PathBuf::from("/opt/intel/mkl/lib");
+        if opt_path.exists() { // directory exists
+            opt_path
+        } else {
+            let usr_lib_path = PathBuf::from("/usr/lib/x86_64-linux-gnu");
+            if mkl_libs.iter().all(|lib| usr_lib_path.join(format!("libmkl_{}.a", lib)).exists()) {
+                usr_lib_path
+            } else {
+                PathBuf::from("NOTFOUND")
+            }
+        }
+    };
+
+    dbg!(&mkl_libs_path);
+
+    let mut forward_libs = String::new();
 
     let blas = {
-        if !mkl_root.exists() {
+        if !mkl_libs_path.exists() {
             return Err(Error::MKLInstallNotFound);
         } else {
-            let mkl_prefix = format!("{}/lib/libmkl_", mkl_root.display());
-            let link_libs = format!(
-                "-L{mkl}/lib -ltbb -lpthread -lm -ldl",
-                mkl = mkl_root.display()
-            );
+            let mkl_prefix = format!("{}/libmkl_", mkl_libs_path.display());
+            let aux_libs = format!("-L{mkl} -ltbb -lpthread -lm -ldl", mkl = mkl_libs_path.display());
+            let mkl_libs = format!("{mkl}{l1}.a {mkl}{l2}.a {mkl}{l3}.a", 
+                    mkl = mkl_prefix,
+                    l1 = mkl_libs[0],
+                    l2 = mkl_libs[1],
+                    l3 = mkl_libs[2])
+                ;
             if cfg!(target_os = "macos") {
-                format!(
-                    "--with-blas={mkl}intel_lp64.a {mkl}tbb_thread.a {mkl}core.a -lc++ {}",
-                    link_libs,
-                    mkl = mkl_prefix
-                )
+                format!( "--with-blas={mkl} {aux} -lc++", mkl=mkl_libs, aux=aux_libs)
+            } else if cfg!(target_os = "linux") {
+                // Only forward the libs to cnlp on linux because we build ipopt statically here.
+                let mkl_group = format!("-Wl,--start-group {} -Wl,--end-group", mkl_libs);
+                let all_libs = format!("{mkl} {aux} -lstdc++", mkl=mkl_group, aux=aux_libs);
+                forward_libs.push_str(&all_libs);
+                format!("--with-blas={}", all_libs)
             } else {
                 // Currently only support building Ipopt with MKL on macOS.
                 return Err(Error::UnsupportedPlatform);
@@ -524,8 +561,7 @@ fn build_with_mkl(install_dir: &Path, debug: bool) -> Result<(), Error> {
         .join("configure").to_str().unwrap(), |cmd| {
         let cmd = cmd
             .arg(format!("--prefix={}", install_dir.display()))
-            .arg("--enable-shared")
-            .arg("--disable-static")
+            .args(&BUILD_FLAGS)
             .arg(blas.clone());
 
         if debug {
@@ -538,11 +574,12 @@ fn build_with_mkl(install_dir: &Path, debug: bool) -> Result<(), Error> {
     run("make", |cmd| cmd.arg(format!("-j{}", num_cpus::get())));
     //run("make", |cmd| cmd.arg("test")); // Ensure everything is working
     run("make", |cmd| cmd.arg("install")); // Install to install_dir
-    Ok(())
+
+    Ok(forward_libs)
 }
 
-// Build Ipopt with Default libs in the current directory.
-fn build_with_defaults(install_dir: &Path, debug: bool) -> Result<(), Error> {
+// Build Ipopt with Default libs.
+fn build_with_default_blas(install_dir: &Path, debug: bool) -> Result<String, Error> {
     let build_dir = env::current_dir().unwrap();
     let root_dir = build_dir.parent().unwrap().parent().unwrap();
     let third_party = root_dir.join("ThirdParty");
@@ -568,8 +605,7 @@ fn build_with_defaults(install_dir: &Path, debug: bool) -> Result<(), Error> {
     run(root_dir.join("configure").to_str().unwrap(), |cmd| {
         let cmd = cmd
             .arg(format!("--prefix={}", install_dir.display()))
-            .arg("--enable-shared")
-            .arg("--disable-static");
+            .args(&BUILD_FLAGS);
 
         if debug {
             cmd.arg(format!("--enable-debug-ipopt"))
@@ -581,7 +617,14 @@ fn build_with_defaults(install_dir: &Path, debug: bool) -> Result<(), Error> {
     run("make", |cmd| cmd.arg(format!("-j{}", num_cpus::get())));
     //run("make", |cmd| cmd.arg("test")); // Ensure everything is working
     run("make", |cmd| cmd.arg("install")); // Install to install_dir
-    Ok(())
+
+    let blas_lapack_libs = if cfg!(target_os = "linux") { "-lblas -llapack" } else { "" };
+
+    let mut link_libs = 
+    format!("{link} {inst}/libcoinmumps.a {inst}/libcoinasl.a {inst}/libcoinmetis.a",
+            link=blas_lapack_libs, inst=install_dir.join("lib").to_str().unwrap());
+
+    Ok(link_libs)
 }
 
 fn remove_suffix(value: &mut String, suffix: &str) {
