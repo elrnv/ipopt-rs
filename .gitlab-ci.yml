@@ -5,12 +5,13 @@ rust-latest:
   stage: build
   image: rust:latest
   before_script:
-      - echo "deb http://deb.debian.org/debian testing main contrib non-free" >> /etc/apt/sources.list
-      - echo "deb-src http://deb.debian.org/debian testing main contrib non-free" >> /etc/apt/sources.list
-      - echo "deb http://security.debian.org testing/updates main contrib non-free" >> /etc/apt/sources.list
-      - echo "deb http://deb.debian.org/debian experimental main" >> /etc/apt/sources.list
+      #- echo "deb http://deb.debian.org/debian testing main contrib non-free" >> /etc/apt/sources.list
+      #- echo "deb-src http://deb.debian.org/debian testing main contrib non-free" >> /etc/apt/sources.list
+      #- echo "deb http://security.debian.org testing/updates main contrib non-free" >> /etc/apt/sources.list
+      #- echo "deb http://deb.debian.org/debian experimental main" >> /etc/apt/sources.list
       - apt-get update --yes
-      - apt-get -t testing install --yes cmake clang libclang-dev gfortran-8
+        #- apt-get -t testing install --yes cmake libclang-dev gfortran-8
+      - apt-get install --yes cmake libclang-dev gfortran
   script:
     - cargo build --verbose
     - cargo test --verbose
@@ -19,12 +20,13 @@ rust-nightly:
   stage: build
   image: rustlang/rust:nightly
   before_script:
-      - echo "deb http://deb.debian.org/debian testing main contrib non-free" >> /etc/apt/sources.list
-      - echo "deb-src http://deb.debian.org/debian testing main contrib non-free" >> /etc/apt/sources.list
-      - echo "deb http://security.debian.org testing/updates main contrib non-free" >> /etc/apt/sources.list
-      - echo "deb http://deb.debian.org/debian experimental main" >> /etc/apt/sources.list
+      #- echo "deb http://deb.debian.org/debian testing main contrib non-free" >> /etc/apt/sources.list
+      #- echo "deb-src http://deb.debian.org/debian testing main contrib non-free" >> /etc/apt/sources.list
+      #- echo "deb http://security.debian.org testing/updates main contrib non-free" >> /etc/apt/sources.list
+      #- echo "deb http://deb.debian.org/debian experimental main" >> /etc/apt/sources.list
       - apt-get update --yes
-      - apt-get -t testing install --yes cmake clang libclang-dev gfortran-8
+        #- apt-get -t testing install --yes cmake libclang-dev gfortran-8
+      - apt-get install --yes cmake libclang-dev gfortran
   script:
     - cargo build --verbose
     - cargo test --verbose
