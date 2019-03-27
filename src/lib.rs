@@ -716,14 +716,19 @@ impl<P: BasicProblem> Ipopt<P> {
         if init_x != 0 {
             let x = slice::from_raw_parts_mut(x, n as usize);
             if !nlp.initial_point(x) {
-                for i in 0..n as usize { x[i] = 0.0; } // initialize to zero!
+                for i in 0..n as usize {
+                    x[i] = 0.0;
+                } // initialize to zero!
             }
         }
         if init_z != 0 {
             let z_l = slice::from_raw_parts_mut(z_l, n as usize);
             let z_u = slice::from_raw_parts_mut(z_u, n as usize);
             if !nlp.initial_bounds_multipliers(z_l, z_u) {
-                for i in 0..n as usize { z_l[i] = 0.0; z_u[i] = 0.0; } // initialize to zero!
+                for i in 0..n as usize {
+                    z_l[i] = 0.0;
+                    z_u[i] = 0.0;
+                } // initialize to zero!
             }
         }
         true as Bool
@@ -1021,7 +1026,10 @@ impl<P: ConstrainedProblem> Ipopt<P> {
         if (num_constraints > 0 && num_constraint_jac_nnz == 0)
             || (num_constraints == 0 && num_constraint_jac_nnz > 0)
         {
-            return Err(CreateError::InvalidConstraintJacobian { num_constraints, num_constraint_jac_nnz });
+            return Err(CreateError::InvalidConstraintJacobian {
+                num_constraints,
+                num_constraint_jac_nnz,
+            });
         }
 
         let mut nlp_internal: ffi::CNLP_ProblemPtr = ::std::ptr::null_mut();
@@ -1070,20 +1078,27 @@ impl<P: ConstrainedProblem> Ipopt<P> {
         if init_x != 0 {
             let x = slice::from_raw_parts_mut(x, n as usize);
             if !nlp.initial_point(x) {
-                for i in 0..n as usize { x[i] = 0.0; } // initialize to zero!
+                for i in 0..n as usize {
+                    x[i] = 0.0;
+                } // initialize to zero!
             }
         }
         if init_z != 0 {
             let z_l = slice::from_raw_parts_mut(z_l, n as usize);
             let z_u = slice::from_raw_parts_mut(z_u, n as usize);
             if !nlp.initial_bounds_multipliers(z_l, z_u) {
-                for i in 0..n as usize { z_l[i] = 0.0; z_u[i] = 0.0; } // initialize to zero!
+                for i in 0..n as usize {
+                    z_l[i] = 0.0;
+                    z_u[i] = 0.0;
+                } // initialize to zero!
             }
         }
         if init_lambda != 0 {
             let lambda = slice::from_raw_parts_mut(lambda, m as usize);
             if !nlp.initial_constraint_multipliers(lambda) {
-                for i in 0..m as usize { lambda[i] = 0.0; } // initialize to zero!
+                for i in 0..m as usize {
+                    lambda[i] = 0.0;
+                } // initialize to zero!
             }
         }
         true as Bool
@@ -1433,7 +1448,7 @@ pub enum CreateError {
         /// Number of constraints set in the problem.
         num_constraints: usize,
         /// Number of constraint jacobian entries specified for the problem.
-        num_constraint_jac_nnz: usize
+        num_constraint_jac_nnz: usize,
     },
     /// Unexpected error occureed: None of the above. This is likely an internal bug.
     Unknown,
@@ -1477,8 +1492,12 @@ impl CreateProblemStatus {
             ffi::CNLP_CreateProblemStatus_CNLP_MISSING_BOUNDS => RS::MissingBounds,
             ffi::CNLP_CreateProblemStatus_CNLP_MISSING_EVAL_F => RS::MissingEvalF,
             ffi::CNLP_CreateProblemStatus_CNLP_MISSING_EVAL_GRAD_F => RS::MissingEvalGradF,
-            ffi::CNLP_CreateProblemStatus_CNLP_INVALID_PROBLEM_DEFINITION_ON_CREATE => RS::InvalidProblemDefinition,
-            ffi::CNLP_CreateProblemStatus_CNLP_UNRECOVERABLE_EXCEPTION_ON_CREATE => RS::UnknownError,
+            ffi::CNLP_CreateProblemStatus_CNLP_INVALID_PROBLEM_DEFINITION_ON_CREATE => {
+                RS::InvalidProblemDefinition
+            }
+            ffi::CNLP_CreateProblemStatus_CNLP_UNRECOVERABLE_EXCEPTION_ON_CREATE => {
+                RS::UnknownError
+            }
             _ => RS::UnknownError,
         }
     }
@@ -1645,7 +1664,10 @@ mod tests {
         };
         assert_eq!(
             Ipopt::new(nlp3).unwrap_err(),
-            CreateError::InvalidConstraintJacobian { num_constraints: 2, num_constraint_jac_nnz: 0 }
+            CreateError::InvalidConstraintJacobian {
+                num_constraints: 2,
+                num_constraint_jac_nnz: 0
+            }
         );
 
         let nlp4 = NlpConstrained {
@@ -1656,7 +1678,10 @@ mod tests {
         };
         assert_eq!(
             Ipopt::new(nlp4).unwrap_err(),
-            CreateError::InvalidConstraintJacobian { num_constraints: 0, num_constraint_jac_nnz: 8 }
+            CreateError::InvalidConstraintJacobian {
+                num_constraints: 0,
+                num_constraint_jac_nnz: 8
+            }
         );
     }
 
