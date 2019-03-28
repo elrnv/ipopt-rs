@@ -43,7 +43,7 @@ use lazy_static::lazy_static;
  */
 use std::fs::File;
 use std::io::{BufWriter, Write};
-use std::path::{Path, PathBuf, Component};
+use std::path::{Path, PathBuf};
 use std::ffi::OsStr;
 use std::process::Command;
 use std::{env, fs};
@@ -141,7 +141,7 @@ fn main() {
             return;
         }
         Err(err) => {
-            msg.push_str("Failed to find Ipopt installed on the system\n\n");
+            msg.push_str(&format!("Failed to find Ipopt installed on the system: {:?}\n\n", err));
         }
     }
 
