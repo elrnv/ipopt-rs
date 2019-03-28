@@ -52,7 +52,7 @@ use tar::Archive;
 const LIBRARY: &str = "ipopt";
 const SOURCE_URL: &str = "https://www.coin-or.org/download/source/Ipopt";
 const VERSION: &str = "3.12.10";
-const MIN_VERSION: &str = "3.12.8";
+const MIN_VERSION: &str = "3.11.9";
 const BINARY_DL_URL: &str = "https://github.com/JuliaOpt/IpoptBuilder/releases/download/";
 const SOURCE_MD5: &str = "ee250ece251a82dc2580efa51f79d758";
 const SOURCE_SHA1: &str = "5eb1aefb2f9acfd8b1b5838370528ac1d73787d6";
@@ -62,6 +62,7 @@ mod platform {
     // For some reason I couldn't build and link to Ipopt as a static lib on macos, so this is here.
     pub static BUILD_FLAGS: [&str; 2] = ["--enable-shared", "--disable-static"];
     pub static LIB_EXT: &str = "dylib";
+    pub static DYNAMIC_LIB_EXT: &str = "dylib";
     pub static BINARY_SUFFIX: &str = "x86_64-apple-darwin14.tar.gz";
     pub static BINARY_MD5: &str = "59825a6b7e40929ff2c88fb23dc82b7c";
     pub static BINARY_SHA1: &str = "a24f1def1ce9fc33393779b574cea9bfb4765c4f";
@@ -71,6 +72,7 @@ mod platform {
 mod platform {
     pub static BUILD_FLAGS: [&str; 3] = ["--disable-shared", "--enable-static", "--with-pic"];
     pub static LIB_EXT: &str = "a";
+    pub static DYNAMIC_LIB_EXT: &str = "so";
     pub static BINARY_SUFFIX: &str = "x86_64-linux-gnu-gcc8.tar.gz";
     pub static BINARY_MD5: &str = "9c406cb1b54918b56945548e64b8e9ca";
     pub static BINARY_SHA1: &str = "a940b1f70021ddbd057643a056b61228d68f26e6";
@@ -86,6 +88,7 @@ mod family {
 mod platform {
     pub static BUILD_FLAGS: [&str;1] = [""];
     pub static LIB_EXT: &str = "dll";
+    pub static DYNAMIC_LIB_EXT: &str = "dll";
     pub static BINARY_SUFFIX: &str = "x86_64-w64-mingw32-gcc8.tar.gz";
 }
 
@@ -115,18 +118,38 @@ fn main() {
 
     // Try to find Ipopt preinstalled.
     match try_pkg_config() {
-        Ok(ipopt_install_path) => {
-            link(build_cnlp(ipopt_install_path))
+        Ok((ipopt_install_path, link_libs)) => {
+            create_link_libs_cmake_script(Some(&link_libs))
+                .expect("Failed to write link_libs cmake script.");
+            link(build_cnlp(ipopt_install_path), true)
                 .expect("Failed to create bindings for Ipopt library.");
+            return;
         }
         Err(err) => {
             msg.push_str(&format!("Failed to find Ipopt using pkg-config: {:?}\n\n", err));
         }
     }
 
+    // Check if Ipopt has been installed as a local system lib, but for some reason pkg-config is
+    // missing.
+    match try_system_install() {
+        Ok((ipopt_install_path, mb_link_libs)) => {
+          create_link_libs_cmake_script(mb_link_libs.as_ref())
+              .expect("Failed to write link_libs cmake script");
+            link(build_cnlp(ipopt_install_path), true)
+                .expect("Failed to create bindings for Ipopt library.");
+            return;
+        }
+        Err(err) => {
+            msg.push_str("Failed to find Ipopt installed on the system\n\n");
+        }
+    }
+
     match build_and_install_ipopt() {
-        Ok(ipopt_install_path) => {
-            link(build_cnlp(ipopt_install_path))
+        Ok((ipopt_install_path, mb_link_libs)) => {
+          create_link_libs_cmake_script(mb_link_libs.as_ref())
+              .expect("Failed to write link_libs cmake script");
+            link(build_cnlp(ipopt_install_path), false)
                 .expect("Failed to create bindings for Ipopt library.");
             return;
         }
@@ -136,8 +159,11 @@ fn main() {
     }
 
     match download_and_install_prebuilt_binary() {
-        Ok(ipopt_install_path) => {
-            link(build_cnlp(ipopt_install_path)).expect("Failed to create bindings for Ipopt library.");
+        Ok((ipopt_install_path, mb_link_libs)) => {
+            create_link_libs_cmake_script(mb_link_libs.as_ref())
+                .expect("Failed to write link_libs cmake script");
+            link(build_cnlp(ipopt_install_path), true)
+                .expect("Failed to create bindings for Ipopt library.");
             return;
         }
         Err(err) => {
@@ -150,6 +176,7 @@ fn main() {
 
 #[derive(Clone, Debug, PartialEq)]
 enum Error {
+    SystemLibNotFound,
     PkgConfigNotFound,
     PkgConfigInvalidInstallPath,
     MKLInstallNotFound,
@@ -172,8 +199,12 @@ impl From<curl::Error> for Error {
     }
 }
 
+
+// The following convenience functions produce the correct library filename for the corresponding
+// platform when downloading the binaries. We always download dynamic libs.
+
 fn library_name() -> String {
-    format!("lib{}.{}", LIBRARY, LIB_EXT)
+    format!("lib{}.{}", LIBRARY, DYNAMIC_LIB_EXT)
 }
 
 #[cfg(target_family = "windows")]
@@ -185,35 +216,36 @@ fn versioned_library_name() -> String {
 #[cfg(target_family = "unix")]
 fn versioned_library_name() -> String {
     if cfg!(target_os = "macos") {
-        format!("lib{}.{}.{}.{}", LIBRARY, LIB_MAJ_VER, LIB_MIN_VER, LIB_EXT)
+        format!("lib{}.{}.{}.{}", LIBRARY, LIB_MAJ_VER, LIB_MIN_VER, DYNAMIC_LIB_EXT)
     } else {
-        format!("lib{}.{}", LIBRARY, LIB_EXT)
+        format!("lib{}.{}.{}.{}", LIBRARY, DYNAMIC_LIB_EXT, LIB_MAJ_VER, LIB_MIN_VER)
     }
 }
 
 #[cfg(target_family = "unix")]
 fn major_versioned_library_name() -> String {
     if cfg!(target_os = "macos") {
-        format!("lib{}.{}.{}", LIBRARY, LIB_MAJ_VER, LIB_EXT)
+        format!("lib{}.{}.{}", LIBRARY, LIB_MAJ_VER, DYNAMIC_LIB_EXT)
     } else {
-        format!("lib{}.{}", LIBRARY, LIB_EXT)
+        format!("lib{}.{}.{}", LIBRARY, DYNAMIC_LIB_EXT, LIB_MAJ_VER)
     }
 }
 
 // Try to find ipopt install path from pkg_config.
-fn try_pkg_config() -> Result<PathBuf, Error> {
+fn try_pkg_config() -> Result<(PathBuf, String), Error> {
     match pkg_config::Config::new()
         .atleast_version(MIN_VERSION)
+        .cargo_metadata(false) // We are linking to cnlp, not to the rust lib
         .probe(LIBRARY)
     {
         Ok(lib) => {
             dbg!(&lib);
-            let ipopt_lib_name = library_name();
+            let ipopt_lib_name = format!("lib{}.{}", LIBRARY, LIB_EXT);
             let mut lib_path = Err(Error::PkgConfigInvalidInstallPath);
             for path in lib.link_paths.iter() {
                 let candidate_lib = path.join(&ipopt_lib_name);
                 if candidate_lib.exists() {
-                    lib_path = Ok(candidate_lib);
+                    lib_path = Ok(path);
                     break;
                 }
             }
@@ -222,40 +254,63 @@ fn try_pkg_config() -> Result<PathBuf, Error> {
 
             let mut include_path = Err(Error::PkgConfigInvalidInstallPath);
             for path in lib.include_paths.iter() {
-                let candidate_include = path.join("coin");
-                if candidate_include.exists() {
-                    include_path = Ok(candidate_include);
+                if path.ends_with("coin") {
+                    include_path = Ok(path.parent().unwrap());
                     break;
                 }
             }
 
             let include_path = include_path?;
 
+            dbg!(&include_path);
+            dbg!(&lib_path);
+
             // Extract the common install path.
             let mut install_path = PathBuf::new();
             let mut comp_iter = lib_path.components().zip(include_path.components());
             for (l,i) in &mut comp_iter {
-                if l == i {
+                dbg!(&l);
+                dbg!(&i);
+                if l.as_os_str() == i.as_os_str() {
                     install_path.push(l);
-                } else {
+                } else if l.as_os_str() == OsStr::new("lib") && i.as_os_str() == OsStr::new("include") {
+                    // Make sure that the next element gives the include and lib dirs.
                     break;
+                } else {
+                    return Err(Error::PkgConfigInvalidInstallPath);
                 }
             }
 
-            // Make sure that the next element gives the include and lib dirs.
-            if comp_iter.next() !=
-                Some((Component::Normal(OsStr::new("lib")), Component::Normal(OsStr::new("include")))) {
-                    Err(Error::PkgConfigInvalidInstallPath)
-            } else {
-                Ok(install_path)
+            dbg!(&install_path);
+
+            let mut link_libs = String::new();
+            for path in lib.libs {
+                link_libs.push_str(&format!("-l{} ", path));
             }
+            for path in lib.link_paths {
+                link_libs.push_str(&format!("-L{} ", path.display()));
+            }
+
+            Ok((install_path, link_libs.trim().to_string()))
         },
         Err(_) => Err(Error::PkgConfigNotFound),
     }
 }
 
+// Just check system libs. There may be something there.
+fn try_system_install() -> Result<(PathBuf, Option<String>), Error> {
+    // Check /usr/lib
+    let usr = PathBuf::from("/usr");
+    let usr_lib_ipopt = usr.join("lib").join(major_versioned_library_name());
+    if usr_lib_ipopt.exists() {
+        Ok((usr, Some("-lipopt".to_string())))
+    } else {
+        Err(Error::SystemLibNotFound)
+    }
+}
+
 /// Download the ipopt prebuilt binary from JuliaOpt and install it.
-fn download_and_install_prebuilt_binary() -> Result<PathBuf, Error> {
+fn download_and_install_prebuilt_binary() -> Result<(PathBuf, Option<String>), Error> {
     let file_name = BINARY_NAME.clone();
 
     // Extract the filename from the URL
@@ -284,13 +339,15 @@ fn download_and_install_prebuilt_binary() -> Result<PathBuf, Error> {
     let library_file = versioned_library_name();
     let lib_dir = install_dir.join("lib");
     let library_path = lib_dir.join(&library_file);
-    if library_path.exists() {
+    dbg!(&library_path);
+
+    if library_path.exists() && link_libs_cmake_path().exists() {
         // Nothing to be done, library is already installed
-        return Ok(install_dir);
+        return Ok((install_dir, None));
     }
 
     // On unix make sure all artifacts are removed to cleanup the environment
-    if cfg!(target_family = "unix") {
+    if cfg!(unix) {
         fs::remove_file(lib_dir.join(major_versioned_library_name())).ok();
         fs::remove_file(lib_dir.join(library_name())).ok();
     }
@@ -299,24 +356,27 @@ fn download_and_install_prebuilt_binary() -> Result<PathBuf, Error> {
     let tarball_path = download_dir.join(file_name);
     dbg!(&tarball_path);
 
-    if !unpacked_dir.exists() {
+    if !tarball_path.exists() {
         download_tarball(&tarball_path, &BINARY_URL, BINARY_MD5, BINARY_SHA1)?;
-        extract_tarball(tarball_path, &unpacked_dir);
     }
+
+    // Remove previously extracted files if any
+    dbg!(&unpacked_dir);
+    fs::remove_dir_all(&unpacked_dir).ok();
+    
+    extract_tarball(tarball_path, &unpacked_dir);
 
     // Copy lib
     if !lib_dir.exists() {
         fs::create_dir(&lib_dir)?;
     }
-    fs::copy(
-        unpacked_dir.join("lib").join(&library_file),
-        &library_path,
-    )
-    .unwrap();
+
+    let downloaded_lib_path = unpacked_dir.join("lib").join(&library_file);
 
     // Make links (on unix only)
-    if cfg!(target_family = "unix") {
+    if cfg!(unix) {
         use std::os::unix::fs::symlink;
+        eprintln!("Creating symlinks for dynamic libraries...");
         symlink(&library_path, lib_dir.join(major_versioned_library_name()))?;
         symlink(&library_path, lib_dir.join(library_name()))?;
     }
@@ -333,7 +393,17 @@ fn download_and_install_prebuilt_binary() -> Result<PathBuf, Error> {
         fs::copy(file.path(), install_include_dir.join(file.file_name())).unwrap();
     }
 
-    Ok(install_dir)
+    // Copy the actual library last because we use its existence to check if everything above has
+    // already been done correctly.
+    eprintln!("Copying {} to {}", downloaded_lib_path.display(), library_path.display());
+    fs::copy(
+        downloaded_lib_path,
+        &library_path,
+    )?;
+
+    let mb_link_libs = Some(format!("-L{} -lipopt", lib_dir.display()));
+
+    Ok((install_dir, mb_link_libs))
 }
 
 fn check_tarball_hashes(tarball_path: &Path, md5: &str, sha1: &str) -> Result<(), Error> {
@@ -369,16 +439,24 @@ fn check_tarball_hashes(tarball_path: &Path, md5: &str, sha1: &str) -> Result<()
 fn build_cnlp(ipopt_install_dir: PathBuf) -> PathBuf {
     cmake::Config::new("cnlp")
         .define("Ipopt_DIR:STRING", ipopt_install_dir.to_str().unwrap())
+        .define("LINK_LIBS_PATH:STRING", link_libs_cmake_path().to_str().unwrap())
         .build()
 }
 
-fn link(cnlp_install_path: PathBuf) -> Result<(), Error> {
+/// Link ipopt-sys to our cnlp api. If ipopt is provided as a dynamic lib, we need to link it here.
+/// The `dynamic` flags specifies if ipopt is being linked dynamically.
+fn link(cnlp_install_path: PathBuf, dynamic: bool) -> Result<(), Error> {
     // Link to cnlp
     println!(
         "cargo:rustc-link-search=native={}",
         cnlp_install_path.join("lib").display()
     );
     println!("cargo:rustc-link-lib=dylib=ipopt_cnlp");
+
+    // Ipopt is linked dynamically, so we need to include it here
+    if dynamic {
+        println!("cargo:rustc-link-lib=dylib=ipopt");
+    }
 
     // Generate raw bindings to CNLP interface
     let c_api_header = cnlp_install_path.join("include").join("c_api.h");
@@ -399,6 +477,7 @@ fn link(cnlp_install_path: PathBuf) -> Result<(), Error> {
 /// Download a tarball if it doesn't already exist.
 fn download_tarball(tarball_path: &Path, binary_url: &str, md5: &str, sha1: &str) -> Result<(), Error> {
     if !tarball_path.exists() {
+        eprintln!("Tarball doesn't exist, downloading...");
         let f = File::create(tarball_path).unwrap();
         let mut writer = BufWriter::new(f);
         let mut easy = Easy::new();
@@ -414,6 +493,8 @@ fn download_tarball(tarball_path: &Path, binary_url: &str, md5: &str, sha1: &str
                 response_code,
                 url: binary_url.to_string(),
             });
+        } else {
+            eprintln!("Download successful!");
         }
     }
 
@@ -423,7 +504,7 @@ fn download_tarball(tarball_path: &Path, binary_url: &str, md5: &str, sha1: &str
 }
 
 /// Build Ipopt statically linked to MKL if possible. Return the path to the ipopt library.
-fn build_and_install_ipopt() -> Result<PathBuf, Error> {
+fn build_and_install_ipopt() -> Result<(PathBuf, Option<String>), Error> {
     // Compile ipopt from source
     // Build URL to download from
     let binary_url = format!("{}/Ipopt-{}.tgz", SOURCE_URL, VERSION);
@@ -455,9 +536,9 @@ fn build_and_install_ipopt() -> Result<PathBuf, Error> {
     let install_dir = output.clone();
     let library_file = format!("lib{}.{}", LIBRARY, LIB_EXT);
     let library_path = install_dir.join("lib").join(&library_file);
-    if library_path.exists() {
+    if library_path.exists() && link_libs_cmake_path().exists() {
         // Nothing to be done, library is already installed.
-        return Ok(install_dir);
+        return Ok((install_dir, None));
     }
 
     // Build destination path
@@ -465,6 +546,11 @@ fn build_and_install_ipopt() -> Result<PathBuf, Error> {
     dbg!(&tarball_path);
 
     download_tarball(&tarball_path, &binary_url, SOURCE_MD5, SOURCE_SHA1)?;
+
+    // Remove previously extracted files if any
+    dbg!(&unpacked_dir);
+    fs::remove_dir_all(&unpacked_dir).ok();
+
     extract_tarball(tarball_path, &download_dir);
 
     // Configure and compile
@@ -493,13 +579,25 @@ fn build_and_install_ipopt() -> Result<PathBuf, Error> {
 
     let link_libs = res?; // Propagate any errors after we have restored the current dir.
 
-    // Generate an additional CMake script for cnlp to link against any additional libs.
-    // This, for instance, depends on whether we link to libipopt statically or dynamically.
-    let mut link_libs_cmake_script = fs::File::create(install_dir.join("link_libs.cmake"))?;
-    write!(&mut link_libs_cmake_script, "cmake_minimum_required(VERSION 3.6)\n\n")?;
-    write!(&mut link_libs_cmake_script, "set(LINK_LIBS \"{}\")", link_libs)?;
+    Ok((install_dir, Some(link_libs)))
+}
 
-    Ok(install_dir)
+fn link_libs_cmake_path() -> PathBuf {
+    let output = PathBuf::from(&env::var("OUT_DIR").unwrap());
+    output.join("link_libs.cmake")
+}
+
+/// Create an extra cmake script that tells our cnlp lib about any additional libraries that it
+/// needs to link to.
+fn create_link_libs_cmake_script(mb_link_libs: Option<&String>) -> Result<(), Error> {
+    if let Some(link_libs) = mb_link_libs {
+        // Generate an additional CMake script for cnlp to link against any additional libs.
+        // This, for instance, depends on whether we link to libipopt statically or dynamically.
+        let mut link_libs_cmake_script = fs::File::create(link_libs_cmake_path())?;
+        write!(&mut link_libs_cmake_script, "cmake_minimum_required(VERSION 3.6)\n\n")?;
+        write!(&mut link_libs_cmake_script, "set(LINK_LIBS \"{}\")", link_libs)?;
+    }
+    Ok(())
 }
 
 
@@ -635,7 +733,8 @@ fn remove_suffix(value: &mut String, suffix: &str) {
 }
 
 fn extract_tarball<P: AsRef<Path> + std::fmt::Debug, P2: AsRef<Path> + std::fmt::Debug>(archive_path: P, extract_to: P2) {
-    println!("Extracting tarball {:?} to {:?}", &archive_path, &extract_to);
+    eprintln!("Extracting tarball {:?} to {:?}", &archive_path, &extract_to);
+
     let file = File::open(archive_path).unwrap();
     let mut a = Archive::new(GzDecoder::new(file));
     a.unpack(extract_to).unwrap();
@@ -647,9 +746,9 @@ where
 {
     let mut command = Command::new(name);
     let configured = configure(&mut command);
-    println!("Executing {:?}", configured);
+    eprintln!("Executing {:?}", configured);
     if !configured.status().unwrap().success() {
         panic!("failed to execute {:?}", configured);
     }
-    println!("Command {:?} finished successfully", configured);
+    eprintln!("Command {:?} finished successfully", configured);
 }

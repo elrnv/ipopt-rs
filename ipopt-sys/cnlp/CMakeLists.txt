@@ -12,7 +12,8 @@ find_library( Ipopt_LIBRARY ipopt PATHS ${Ipopt_DIR}/lib DOC "Ipopt library")
 
 # Check if there are additional libraries we need to link to after building ipopt statically.
 # In particular this file should set the LINK_LIBS variable.
-include( ${Ipopt_DIR}/link_libs.cmake )
+set( LINK_LIBS_PATH "NOTFOUND" CACHE STRING "Extra link libs cmake script path")
+include( ${LINK_LIBS_PATH} )
 
 set( library_name ipopt_cnlp )
 
@@ -39,9 +40,9 @@ add_library( ${library_name} SHARED
     src/nlp.cpp
 )
 
-# Link against the Houdini libraries, and add required include directories and
-# compile definitions.
-target_link_libraries( ${library_name} ${Ipopt_LIBRARY} ${LINK_LIBS})
+add_definitions(-DHAVE_CSTDDEF)
+
+target_link_libraries( ${library_name} PUBLIC ${Ipopt_LIBRARY} ${LINK_LIBS})
 
 target_include_directories( ${library_name} PRIVATE ${Ipopt_INCLUDE_DIR} )
 
