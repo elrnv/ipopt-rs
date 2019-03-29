@@ -453,7 +453,12 @@ fn link(cnlp_install_path: PathBuf, dynamic: bool) -> Result<(), Error> {
     );
     println!("cargo:rustc-link-lib=dylib=ipopt_cnlp");
 
-    // Ipopt is linked dynamically, so we need to include it here
+    // Add metadata about where this dependency is being installed.
+    println!("cargo:root={}", cnlp_install_path.display());
+    println!("cargo:libdir={}", cnlp_install_path.join("lib").display());
+    println!("cargo:include={}", cnlp_install_path.join("include").display());
+
+    // If Ipopt is linked dynamically, we need to link it here
     if dynamic {
         println!("cargo:rustc-link-lib=dylib=ipopt");
     }

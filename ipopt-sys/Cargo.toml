@@ -14,6 +14,8 @@ documentation = "https://docs.rs/ipopt-sys"
 
 keywords = ["non-linear", "optimization", "constrained", "ipopt", "unsafe"]
 
+links = "ipopt_cnlp"
+
 [dev-dependencies]
 approx = "0.3"
 
