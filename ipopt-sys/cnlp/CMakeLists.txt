@@ -10,11 +10,6 @@ set( Ipopt_DIR "NOTFOUND" CACHE STRING "Ipopt install path")
 find_path( Ipopt_INCLUDE_DIR coin/IpIpoptApplication.hpp PATHS ${Ipopt_DIR}/include DOC "Ipopt include directory")
 find_library( Ipopt_LIBRARY ipopt PATHS ${Ipopt_DIR}/lib DOC "Ipopt library")
 
-# Check if there are additional libraries we need to link to after building ipopt statically.
-# In particular this file should set the LINK_LIBS variable.
-set( LINK_LIBS_PATH "NOTFOUND" CACHE STRING "Extra link libs cmake script path")
-include( ${LINK_LIBS_PATH} )
-
 set( library_name ipopt_cnlp )
 
 set( CAPI_HEADERS src/c_api.h )

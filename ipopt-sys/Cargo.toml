@@ -14,7 +14,7 @@ documentation = "https://docs.rs/ipopt-sys"
 
 keywords = ["non-linear", "optimization", "constrained", "ipopt", "unsafe"]
 
-links = "ipopt_cnlp"
+links = "ipopt"
 
 [dev-dependencies]
 approx = "0.3"
@@ -29,3 +29,5 @@ cmake = "0.1"
 lazy_static = "1.3"
 num_cpus = "1.10"
 rust-crypto = "0.2"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0" }
