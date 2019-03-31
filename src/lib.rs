@@ -422,7 +422,7 @@ pub struct IntermediateCallbackData {
     /// the constraint violation of the original problem at the current point. The option
     /// inf_pr_output can be used to switch to the printing of a different quantity.
     pub inf_pr: Number,
-    /// The scaled dual infeasibility at the current point. This quantity measure the infinity-norm
+    /// The scaled dual infeasibility at the current point. This quantity measures the infinity-norm
     /// (max) of the internal dual infeasibility, Eq. (4a) in the [implementation
     /// paper](https://www.coin-or.org/Ipopt/documentation/node64.html#WaecBieg06:mp),
     /// including inequality constraints reformulated using slack variables and problem scaling.
