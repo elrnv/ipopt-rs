@@ -62,8 +62,8 @@ const SOURCE_SHA1: &str = "5eb1aefb2f9acfd8b1b5838370528ac1d73787d6";
 #[cfg(target_os = "macos")]
 mod platform {
     // For some reason I couldn't build and link to Ipopt as a static lib on macos, so this is here.
-    pub static BUILD_FLAGS: [&str; 1] = ["--disable-static"];
-    pub static LIB_EXT: &str = "dylib";
+    pub static BUILD_FLAGS: [&str; 1] = ["--disable-shared"];
+    pub static LIB_EXT: &str = "a";
     pub static DYNAMIC_LIB_EXT: &str = "dylib";
     pub static BINARY_SUFFIX: &str = "x86_64-apple-darwin14.tar.gz";
     pub static BINARY_MD5: &str = "59825a6b7e40929ff2c88fb23dc82b7c";
@@ -501,8 +501,12 @@ fn link(cnlp_install_path: PathBuf, link_info: LinkInfo, dynamic: bool) -> Resul
             };
             println!("cargo:rustc-link-lib={}={}", lib_type_str, lib);
         }
-        println!("cargo:rustc-link-lib=dylib=gfortran");
-        println!("cargo:rustc-link-lib=dylib=stdc++");
+        if cfg!(target_os = "macos") {
+            println!("cargo:rustc-link-lib=dylib=c++");
+        } else {
+            println!("cargo:rustc-link-lib=dylib=gfortran");
+            println!("cargo:rustc-link-lib=dylib=stdc++");
+        }
     }
 
     // Generate raw bindings to CNLP interface
@@ -717,22 +721,24 @@ fn build_with_mkl(install_dir: &Path, debug: bool) -> Result<LinkInfo, Error> {
     //run("make", |cmd| cmd.arg("test")); // Ensure everything is working
     run("make", |cmd| cmd.arg("install")); // Install to install_dir
 
-    // Strip redundant modules from the archive. This is an Ipopt artifact.
-    run("ar", |cmd| cmd
-        .arg("dv")
-        .arg(format!("{}/lib/libipopt.a", install_dir.display()))
-        .arg("libmkl_intel_lp64.a")
-        .arg("libmkl_tbb_thread.a")
-        .arg("libmkl_core.a")
-        .arg("libmkl_intel_lp64.a")
-        .arg("libmkl_tbb_thread.a")
-        .arg("libmkl_core.a")
-        .arg("libmkl_intel_lp64.a")
-        .arg("libmkl_tbb_thread.a")
-        .arg("libmkl_core.a")
-        .arg("lt1-libmkl_intel_lp64.a")
-        .arg("lt2-libmkl_tbb_thread.a")
-        .arg("lt3-libmkl_core.a"));
+    if cfg!(unix) {
+        // Strip redundant modules from the archive. This is an Ipopt artifact.
+        run("ar", |cmd| cmd
+            .arg("-d")
+            .arg(format!("{}/lib/libipopt.a", install_dir.display()))
+            .arg("libmkl_intel_lp64.a")
+            .arg("libmkl_tbb_thread.a")
+            .arg("libmkl_core.a")
+            .arg("libmkl_intel_lp64.a")
+            .arg("libmkl_tbb_thread.a")
+            .arg("libmkl_core.a")
+            .arg("libmkl_intel_lp64.a")
+            .arg("libmkl_tbb_thread.a")
+            .arg("libmkl_core.a")
+            .arg("lt1-libmkl_intel_lp64.a")
+            .arg("lt2-libmkl_tbb_thread.a")
+            .arg("lt3-libmkl_core.a"));
+    }
 
     forward_libs.push((LibType::Static, mkl_libs[0].to_string()));
     forward_libs.push((LibType::Static, mkl_libs[1].to_string()));
