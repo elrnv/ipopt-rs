@@ -60,7 +60,7 @@ const SOURCE_SHA1: &str = "5eb1aefb2f9acfd8b1b5838370528ac1d73787d6";
 #[cfg(target_os = "macos")]
 mod platform {
     // For some reason I couldn't build and link to Ipopt as a static lib on macos, so this is here.
-    pub static BUILD_FLAGS: [&str; 2] = ["--enable-shared", "--disable-static"];
+    pub static BUILD_FLAGS: [&str; 1] = ["--disable-static"];
     pub static LIB_EXT: &str = "dylib";
     pub static DYNAMIC_LIB_EXT: &str = "dylib";
     pub static BINARY_SUFFIX: &str = "x86_64-apple-darwin14.tar.gz";
@@ -70,7 +70,7 @@ mod platform {
 
 #[cfg(target_os = "linux")]
 mod platform {
-    pub static BUILD_FLAGS: [&str; 3] = ["--disable-shared", "--enable-static", "--with-pic"];
+    pub static BUILD_FLAGS: [&str; 2] = ["--disable-shared", "--with-pic"];
     pub static LIB_EXT: &str = "a";
     pub static DYNAMIC_LIB_EXT: &str = "so";
     pub static BINARY_SUFFIX: &str = "x86_64-linux-gnu-gcc8.tar.gz";
@@ -118,10 +118,10 @@ fn main() {
 
     // Try to find Ipopt preinstalled.
     match try_pkg_config() {
-        Ok((ipopt_install_path, link_libs)) => {
-            create_link_libs_cmake_script(Some(&link_libs))
+        Ok((ipopt_install_path, link_info)) => {
+            create_link_libs_cmake_script(Some(&"".to_string()))
                 .expect("Failed to write link_libs cmake script.");
-            link(build_cnlp(ipopt_install_path), true)
+            link(build_cnlp(ipopt_install_path), Some(link_info), true)
                 .expect("Failed to create bindings for Ipopt library.");
             return;
         }
@@ -133,10 +133,10 @@ fn main() {
     // Check if Ipopt has been installed as a local system lib, but for some reason pkg-config is
     // missing.
     match try_system_install() {
-        Ok((ipopt_install_path, mb_link_libs)) => {
-          create_link_libs_cmake_script(mb_link_libs.as_ref())
+        Ok((ipopt_install_path, link_info)) => {
+          create_link_libs_cmake_script(Some(&"".to_string()))
               .expect("Failed to write link_libs cmake script");
-            link(build_cnlp(ipopt_install_path), true)
+            link(build_cnlp(ipopt_install_path), Some(link_info), true)
                 .expect("Failed to create bindings for Ipopt library.");
             return;
         }
@@ -146,10 +146,10 @@ fn main() {
     }
 
     match build_and_install_ipopt() {
-        Ok((ipopt_install_path, mb_link_libs)) => {
-          create_link_libs_cmake_script(mb_link_libs.as_ref())
-              .expect("Failed to write link_libs cmake script");
-            link(build_cnlp(ipopt_install_path), false)
+        Ok((ipopt_install_path, mb_link_info)) => {
+            create_link_libs_cmake_script(Some(&"".to_string()))
+                .expect("Failed to write link_libs cmake script");
+            link(build_cnlp(ipopt_install_path), mb_link_info, false)
                 .expect("Failed to create bindings for Ipopt library.");
             return;
         }
@@ -159,10 +159,10 @@ fn main() {
     }
 
     match download_and_install_prebuilt_binary() {
-        Ok((ipopt_install_path, mb_link_libs)) => {
-            create_link_libs_cmake_script(mb_link_libs.as_ref())
+        Ok((ipopt_install_path, link_info)) => {
+            create_link_libs_cmake_script(Some(&"".to_string()))
                 .expect("Failed to write link_libs cmake script");
-            link(build_cnlp(ipopt_install_path), true)
+            link(build_cnlp(ipopt_install_path), Some(link_info), true)
                 .expect("Failed to create bindings for Ipopt library.");
             return;
         }
@@ -232,7 +232,7 @@ fn major_versioned_library_name() -> String {
 }
 
 // Try to find ipopt install path from pkg_config.
-fn try_pkg_config() -> Result<(PathBuf, String), Error> {
+fn try_pkg_config() -> Result<(PathBuf, RustcLinkInfo), Error> {
     match pkg_config::Config::new()
         .atleast_version(MIN_VERSION)
         .cargo_metadata(false) // We are linking to cnlp, not to the rust lib
@@ -283,34 +283,35 @@ fn try_pkg_config() -> Result<(PathBuf, String), Error> {
 
             dbg!(&install_path);
 
-            let mut link_libs = String::new();
-            for path in lib.libs {
-                link_libs.push_str(&format!("-l{} ", path));
-            }
-            for path in lib.link_paths {
-                link_libs.push_str(&format!("-L{} ", path.display()));
-            }
+            let link_info = RustcLinkInfo {
+                libs: lib.libs.iter().cloned().map(|lib| (LibType::Dynamic, lib)).collect(),
+                search_paths: lib.link_paths.clone(),
+            };
 
-            Ok((install_path, link_libs.trim().to_string()))
+            Ok((install_path, link_info))
         },
         Err(_) => Err(Error::PkgConfigNotFound),
     }
 }
 
 // Just check system libs. There may be something there.
-fn try_system_install() -> Result<(PathBuf, Option<String>), Error> {
+fn try_system_install() -> Result<(PathBuf, RustcLinkInfo), Error> {
     // Check /usr/lib
     let usr = PathBuf::from("/usr");
     let usr_lib_ipopt = usr.join("lib").join(major_versioned_library_name());
     if usr_lib_ipopt.exists() {
-        Ok((usr, Some("-lipopt".to_string())))
+        let link_info = RustcLinkInfo {
+            libs: vec![(LibType::Dynamic, "ipopt".to_string())],
+            search_paths: Vec::new(),
+        };
+        Ok((usr, link_info))
     } else {
         Err(Error::SystemLibNotFound)
     }
 }
 
 /// Download the ipopt prebuilt binary from JuliaOpt and install it.
-fn download_and_install_prebuilt_binary() -> Result<(PathBuf, Option<String>), Error> {
+fn download_and_install_prebuilt_binary() -> Result<(PathBuf, RustcLinkInfo), Error> {
     let file_name = BINARY_NAME.clone();
 
     // Extract the filename from the URL
@@ -401,9 +402,12 @@ fn download_and_install_prebuilt_binary() -> Result<(PathBuf, Option<String>), E
         &library_path,
     )?;
 
-    let mb_link_libs = Some(format!("-L{} -lipopt", lib_dir.display()));
+    let link_info = RustcLinkInfo {
+        libs: vec![(LibType::Dynamic, "ipopt".to_string())],
+        search_paths: vec![lib_dir],
+    };
 
-    Ok((install_dir, mb_link_libs))
+    Ok((install_dir, link_info))
 }
 
 fn check_tarball_hashes(tarball_path: &Path, md5: &str, sha1: &str) -> Result<(), Error> {
@@ -445,13 +449,13 @@ fn build_cnlp(ipopt_install_dir: PathBuf) -> PathBuf {
 
 /// Link ipopt-sys to our cnlp api. If ipopt is provided as a dynamic lib, we need to link it here.
 /// The `dynamic` flags specifies if ipopt is being linked dynamically.
-fn link(cnlp_install_path: PathBuf, dynamic: bool) -> Result<(), Error> {
+fn link(cnlp_install_path: PathBuf, link_info: Option<RustcLinkInfo>, dynamic: bool) -> Result<(), Error> {
     // Link to cnlp
     println!(
         "cargo:rustc-link-search=native={}",
         cnlp_install_path.join("lib").display()
     );
-    println!("cargo:rustc-link-lib=dylib=ipopt_cnlp");
+    println!("cargo:rustc-link-lib=static=ipopt_cnlp");
 
     // Add metadata about where this dependency is being installed.
     println!("cargo:root={}", cnlp_install_path.display());
@@ -461,6 +465,23 @@ fn link(cnlp_install_path: PathBuf, dynamic: bool) -> Result<(), Error> {
     // If Ipopt is linked dynamically, we need to link it here
     if dynamic {
         println!("cargo:rustc-link-lib=dylib=ipopt");
+    } else {
+        // Order is important here. The most core libs should appear last.
+        println!("cargo:rustc-link-lib=static=ipopt");
+        if let Some(link_info) = link_info {
+            for path in link_info.search_paths {
+                println!("cargo:rustc-link-search=native={}", path.display());
+            }
+            for (dep_type, lib) in link_info.libs {
+                let lib_type_str = match dep_type {
+                    LibType::Dynamic => "dylib",
+                    LibType::Static => "static",
+                };
+                println!("cargo:rustc-link-lib={}={}", lib_type_str, lib);
+            }
+        }
+        println!("cargo:rustc-link-lib=dylib=gfortran");
+        println!("cargo:rustc-link-lib=dylib=stdc++");
     }
 
     // Generate raw bindings to CNLP interface
@@ -509,7 +530,7 @@ fn download_tarball(tarball_path: &Path, binary_url: &str, md5: &str, sha1: &str
 }
 
 /// Build Ipopt statically linked to MKL if possible. Return the path to the ipopt library.
-fn build_and_install_ipopt() -> Result<(PathBuf, Option<String>), Error> {
+fn build_and_install_ipopt() -> Result<(PathBuf, Option<RustcLinkInfo>), Error> {
     // Compile ipopt from source
     // Build URL to download from
     let binary_url = format!("{}/Ipopt-{}.tgz", SOURCE_URL, VERSION);
@@ -576,15 +597,16 @@ fn build_and_install_ipopt() -> Result<(PathBuf, Option<String>), Error> {
     let proj_root_dir = env::current_dir().unwrap();
     env::set_current_dir(build_dir).unwrap();
     
+    // Build a static lib for ipopt.
     let res = build_with_mkl(&install_dir, debug).or_else(|_|
         build_with_default_blas(&install_dir, debug));
 
     // Restore current directory
     env::set_current_dir(proj_root_dir).unwrap();
 
-    let link_libs = res?; // Propagate any errors after we have restored the current dir.
+    let libs_info = res?; // Propagate any errors after we have restored the current dir.
 
-    Ok((install_dir, Some(link_libs)))
+    Ok((install_dir, Some(libs_info)))
 }
 
 fn link_libs_cmake_path() -> PathBuf {
@@ -605,10 +627,21 @@ fn create_link_libs_cmake_script(mb_link_libs: Option<&String>) -> Result<(), Er
     Ok(())
 }
 
+enum LibType {
+    Dynamic,
+    Static,
+}
 
-// Build Ipopt with MKL in the current directory.
-fn build_with_mkl(install_dir: &Path, debug: bool) -> Result<String, Error> {
-    let mkl_libs = ["intel_lp64", "tbb_thread", "core"];
+struct RustcLinkInfo {
+    /// Libs to link in rustc.
+    libs: Vec<(LibType, String)>,
+    /// Search paths for the specified libs.
+    search_paths: Vec<PathBuf>,
+}
+
+// Build Ipopt static lib with MKL in the current directory.
+fn build_with_mkl(install_dir: &Path, debug: bool) -> Result<RustcLinkInfo, Error> {
+    let mkl_libs = ["mkl_intel_lp64", "mkl_tbb_thread", "mkl_core"];
 
     // Look for intel MKL and link to its libraries if found.
     let mkl_root = env::var("MKLROOT");
@@ -621,7 +654,7 @@ fn build_with_mkl(install_dir: &Path, debug: bool) -> Result<String, Error> {
             opt_path
         } else {
             let usr_lib_path = PathBuf::from("/usr/lib/x86_64-linux-gnu");
-            if mkl_libs.iter().all(|lib| usr_lib_path.join(format!("libmkl_{}.a", lib)).exists()) {
+            if mkl_libs.iter().all(|lib| usr_lib_path.join(format!("lib{}.a", lib)).exists()) {
                 usr_lib_path
             } else {
                 PathBuf::from("NOTFOUND")
@@ -631,27 +664,26 @@ fn build_with_mkl(install_dir: &Path, debug: bool) -> Result<String, Error> {
 
     dbg!(&mkl_libs_path);
 
-    let mut forward_libs = String::new();
+    let mut forward_libs = Vec::new();
 
     let blas = {
         if !mkl_libs_path.exists() {
             return Err(Error::MKLInstallNotFound);
         } else {
-            let mkl_prefix = format!("{}/libmkl_", mkl_libs_path.display());
+            let lib_prefix = format!("{}/lib", mkl_libs_path.display());
             let aux_libs = format!("-L{mkl} -ltbb -lpthread -lm -ldl", mkl = mkl_libs_path.display());
-            let mkl_libs = format!("{mkl}{l1}.a {mkl}{l2}.a {mkl}{l3}.a", 
-                    mkl = mkl_prefix,
+            let mkl_libs_str = format!("{lib}{l1}.a {lib}{l2}.a {lib}{l3}.a", 
+                    lib = lib_prefix,
                     l1 = mkl_libs[0],
                     l2 = mkl_libs[1],
                     l3 = mkl_libs[2])
                 ;
             if cfg!(target_os = "macos") {
-                format!( "--with-blas={mkl} {aux} -lc++", mkl=mkl_libs, aux=aux_libs)
+                format!( "--with-blas={mkl} {aux} -lc++", mkl=mkl_libs_str, aux=aux_libs)
             } else if cfg!(target_os = "linux") {
                 // Only forward the libs to cnlp on linux because we build ipopt statically here.
-                let mkl_group = format!("-Wl,--start-group {} -Wl,--end-group", mkl_libs);
+                let mkl_group = format!("-Wl,--start-group {} -Wl,--end-group", mkl_libs_str);
                 let all_libs = format!("{mkl} {aux} -lstdc++", mkl=mkl_group, aux=aux_libs);
-                forward_libs.push_str(&all_libs);
                 format!("--with-blas={}", all_libs)
             } else {
                 // Currently only support building Ipopt with MKL on macOS.
@@ -678,11 +710,33 @@ fn build_with_mkl(install_dir: &Path, debug: bool) -> Result<String, Error> {
     //run("make", |cmd| cmd.arg("test")); // Ensure everything is working
     run("make", |cmd| cmd.arg("install")); // Install to install_dir
 
-    Ok(forward_libs)
+    // Strip redundant modules from the archive. This is an Ipopt artifact.
+    run("ar", |cmd| cmd
+        .arg("dv")
+        .arg(format!("{}/lib/libipopt.a", install_dir.display()))
+        .arg("libmkl_intel_lp64.a")
+        .arg("libmkl_tbb_thread.a")
+        .arg("libmkl_core.a")
+        .arg("libmkl_intel_lp64.a")
+        .arg("libmkl_tbb_thread.a")
+        .arg("libmkl_core.a")
+        .arg("libmkl_intel_lp64.a")
+        .arg("libmkl_tbb_thread.a")
+        .arg("libmkl_core.a")
+        .arg("lt1-libmkl_intel_lp64.a")
+        .arg("lt2-libmkl_tbb_thread.a")
+        .arg("lt3-libmkl_core.a"));
+
+    forward_libs.push((LibType::Static, mkl_libs[0].to_string()));
+    forward_libs.push((LibType::Static, mkl_libs[1].to_string()));
+    forward_libs.push((LibType::Static, mkl_libs[2].to_string()));
+    forward_libs.push((LibType::Dynamic, "tbb".to_string()));
+
+    Ok(RustcLinkInfo { libs: forward_libs, search_paths: vec![mkl_libs_path]})
 }
 
-// Build Ipopt with Default libs.
-fn build_with_default_blas(install_dir: &Path, debug: bool) -> Result<String, Error> {
+// Build Ipopt static lib with Default libs.
+fn build_with_default_blas(install_dir: &Path, debug: bool) -> Result<RustcLinkInfo, Error> {
     let build_dir = env::current_dir().unwrap();
     let root_dir = build_dir.parent().unwrap().parent().unwrap();
     let third_party = root_dir.join("ThirdParty");
@@ -721,13 +775,18 @@ fn build_with_default_blas(install_dir: &Path, debug: bool) -> Result<String, Er
     //run("make", |cmd| cmd.arg("test")); // Ensure everything is working
     run("make", |cmd| cmd.arg("install")); // Install to install_dir
 
-    let blas_lapack_libs = if cfg!(target_os = "linux") { "-lblas -llapack" } else { "" };
+    let mut link_libs = vec![
+        (LibType::Static, "coinmumps".to_string()),
+        (LibType::Static, "coinasl".to_string()),
+        (LibType::Static, "coinmetis".to_string()),
+    ];
 
-    let link_libs = 
-    format!("{link} {inst}/libcoinmumps.a {inst}/libcoinasl.a {inst}/libcoinmetis.a",
-            link=blas_lapack_libs, inst=install_dir.join("lib").to_str().unwrap());
+    if cfg!(target_os = "linux") {
+        link_libs.push((LibType::Dynamic, "openblas".to_string()));
+        //link_libs.push((LibType::Dynamic, "lapack".to_string()));
+    }
 
-    Ok(link_libs)
+    Ok(RustcLinkInfo { libs: link_libs, search_paths: vec![install_dir.join("lib")]})
 }
 
 fn remove_suffix(value: &mut String, suffix: &str) {

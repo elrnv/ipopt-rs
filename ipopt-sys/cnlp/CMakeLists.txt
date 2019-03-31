@@ -33,7 +33,7 @@ if (APPLE)
 endif(APPLE)
 
 # Add a library and its source files.
-add_library( ${library_name} SHARED
+add_library( ${library_name} STATIC
     ${CAPI_HEADERS} 
     src/nlp.hpp
     src/c_api.cpp
