@@ -491,7 +491,7 @@ fn link(cnlp_install_path: PathBuf, link_info: LinkInfo, dynamic: bool) -> Resul
     } else {
         println!("cargo:rustc-link-lib=static=ipopt");
     }
-        // Order is important here. The most core libs should appear last.
+    // Order is important here. The most core libs should appear last.
     for path in link_info.search_paths {
         println!("cargo:rustc-link-search=native={}", path.display());
     }
