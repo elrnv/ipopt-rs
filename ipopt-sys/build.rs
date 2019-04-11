@@ -292,19 +292,19 @@ fn try_pkg_config() -> Result<(PathBuf, LinkInfo), Error> {
 
 // Just check system libs. There may be something there.
 fn try_system_install() -> Result<(PathBuf, LinkInfo), Error> {
-    // Check /usr/lib
-    let usr = PathBuf::from("/usr");
-    let usr_lib_ipopt = usr.join("lib").join(major_versioned_library_name());
-    if usr_lib_ipopt.exists() {
-        let link_info = LinkInfo {
-            libs: vec![(LibType::Dynamic, "ipopt".to_string())],
-            search_paths: Vec::new(),
-        };
-        save_link_info(&link_info)?;
-        Ok((usr, link_info))
-    } else {
-        Err(Error::SystemLibNotFound)
+    // Check standard prefixes
+    for prefix in vec![PathBuf::from("/usr"), PathBuf::from("/usr/local")] {
+        let prefix_lib_ipopt = prefix.join("lib").join(major_versioned_library_name());
+        if prefix_lib_ipopt.exists() {
+            let link_info = LinkInfo {
+                libs: vec![(LibType::Dynamic, "ipopt".to_string())],
+                search_paths: Vec::new(),
+            };
+            save_link_info(&link_info)?;
+            return Ok((prefix, link_info));
+        }
     }
+    Err(Error::SystemLibNotFound)
 }
 
 /// Download the ipopt prebuilt binary from JuliaOpt and install it.
@@ -489,24 +489,24 @@ fn link(cnlp_install_path: PathBuf, link_info: LinkInfo, dynamic: bool) -> Resul
     if dynamic {
         println!("cargo:rustc-link-lib=dylib=ipopt");
     } else {
-        // Order is important here. The most core libs should appear last.
         println!("cargo:rustc-link-lib=static=ipopt");
-        for path in link_info.search_paths {
-            println!("cargo:rustc-link-search=native={}", path.display());
-        }
-        for (dep_type, lib) in link_info.libs {
-            let lib_type_str = match dep_type {
-                LibType::Dynamic => "dylib",
-                LibType::Static => "static",
-            };
-            println!("cargo:rustc-link-lib={}={}", lib_type_str, lib);
-        }
-        if cfg!(target_os = "macos") {
-            println!("cargo:rustc-link-lib=dylib=c++");
-        } else {
-            println!("cargo:rustc-link-lib=dylib=gfortran");
-            println!("cargo:rustc-link-lib=dylib=stdc++");
-        }
+    }
+        // Order is important here. The most core libs should appear last.
+    for path in link_info.search_paths {
+        println!("cargo:rustc-link-search=native={}", path.display());
+    }
+    for (dep_type, lib) in link_info.libs {
+        let lib_type_str = match dep_type {
+            LibType::Dynamic => "dylib",
+            LibType::Static => "static",
+        };
+        println!("cargo:rustc-link-lib={}={}", lib_type_str, lib);
+    }
+    if cfg!(target_os = "macos") {
+        println!("cargo:rustc-link-lib=dylib=c++");
+    } else {
+        println!("cargo:rustc-link-lib=dylib=gfortran");
+        println!("cargo:rustc-link-lib=dylib=stdc++");
     }
 
     // Generate raw bindings to CNLP interface
