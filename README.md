@@ -106,25 +106,18 @@ See the tests for more examples including constrained optimization.
 # Getting Ipopt Binaries
 
 As it stands, this library is still immature in terms of platform support. There is ongoing work to
-improve this. Currently the supported methods for acquiring the Ipopt libraries is by building
-it against MKL on macOS and downloading binaries from
-[JuliaOpt](https://github.com/JuliaOpt/IpoptBuilder/releases) on Linux. Windows is not currently
-supported until I get a Windows machine or somebody else pitches in to provide the support ;)
-The rough plan for getting Ipopt binaries is currently outlined in the `build.rs` script, but it may
-change in the future.
+improve this. For instance Windows is not currently supported until I get a Windows machine or
+somebody else pitches in to provide the support ;)
 
-
-# Notes on the custom C API
-
-This crate wraps Ipopt's C++ interface in a custom C API called CNLP, which is significantly
-different than Ipopt's own C API. In fact, this crate resembles the Ipopt's C++ API closer than its
-included C API.  The motivation for maintaining a custom C API is to allow users to reuse Ipopt
-instances for multiple solves. For instance, the standard C API prevents users from modifying their
-problem structure and setting custom warm starts between solves without reconstructing solver
-instances. The CNLP also reduces performance costs, which can be noticeable when Ipopt is used to
-solve smaller sub-problems.
+For details on how Ipopt binaries are acquired see [ipopt-sys](ipopt-sys/README.md).
 
 
 # License
 
-This repository is licensed under the [Apache License 2.0](http://www.apache.org/licenses/LICENSE-2.0).
+This repository is licensed under either of 
+
+  * Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or (http://www.apache.org/licenses/LICENSE-2.0)
+  * MIT License ([LICENSE-MIT](LICENSE-MIT) or https://opensource.org/licenses/MIT)
+
+at your option.
+

@@ -1,4 +1,4 @@
-# ipopt-sys
+# `ipopt-sys`
 
 This package provides unsafe Rust bindings to the [Ipopt](https://projects.coin-or.org/Ipopt)
 non-linear optimization library.
@@ -63,6 +63,17 @@ if you have `libgfortran` from the gcc set (mind the gcc version). Otherwise cre
 $ ln -s /usr/local/gfortran/lib/libgfortran.dylib /usr/local/lib/libgfortran.dylib
 ```
 
-if you installed the `gfortran` directly.
+if you installed `gfortran` directly.
 
 Ultimately, no matter which method you choose, `libgfortran.dylib` must be available through the linker search paths.
+
+
+# License
+
+This repository is licensed under either of 
+
+  * Apache License, Version 2.0 ([LICENSE-APACHE](../LICENSE-APACHE) or (http://www.apache.org/licenses/LICENSE-2.0)
+  * MIT License ([LICENSE-MIT](../LICENSE-MIT) or https://opensource.org/licenses/MIT)
+
+at your option.
+
