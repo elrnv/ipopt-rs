@@ -1,9 +1,9 @@
 [package]
 name = "ipopt-sys"
-version = "0.5.0"
+version = "0.5.1"
 authors = ["Egor Larionov <egor.larionov@gmail.com>"]
 build = "build.rs"
-license = "Apache-2.0"
+license = "Apache-2.0 or MIT"
 description = "Raw unsafe Rust bindings to the Ipopt non-linear optimization library."
 readme = "README.md"
 edition = "2018"
@@ -14,7 +14,7 @@ documentation = "https://docs.rs/ipopt-sys"
 
 keywords = ["non-linear", "optimization", "constrained", "ipopt", "unsafe"]
 
-#links = "ipopt"
+links = "ipopt"
 
 [dev-dependencies]
 approx = "0.3"

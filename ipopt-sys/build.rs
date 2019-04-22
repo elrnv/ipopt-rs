@@ -451,11 +451,6 @@ fn link(cnlp_install_path: PathBuf, link_info: LinkInfo) -> Result<(), Error> {
     );
     println!("cargo:rustc-link-lib=static=ipopt_cnlp");
 
-    // Add metadata about where this dependency is being installed.
-    println!("cargo:root={}", cnlp_install_path.display());
-    println!("cargo:libdir={}", cnlp_install_path.join("lib").display());
-    println!("cargo:include={}", cnlp_install_path.join("include").display());
-
     // Order is important here. The most core libs should appear last.
     for path in link_info.search_paths {
         println!("cargo:rustc-link-search=native={}", path.display());
