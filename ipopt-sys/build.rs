@@ -20,28 +20,18 @@ use serde::{Serialize, Deserialize};
 /**
  * # Goals
  *
- * 1. Make this library build without external dependencies on all platforms. This allows us to run
- *    this library through a third party CI easily.
+ * 1. Make this library build without external dependencies on all major platforms.
  * 2. Use all available local dependencies to build this library if any to make the build process
- *    as fast as possible. This also allows developers with optimized/personalized blas
+ *    as fast as possible. This also allows developers with optimized/personalized blas/lapack
  *    environments to use their configuration without needing to customize this build process.
  *
  *
  * This build file is responsible for:
  *
- * 1. Finding or building Ipopt.
- * 2. Building the custom ipopt_cnlp interface linking to the found/buld Ipopt in step 1.
- * 3. Building this Rust library.
+ * 1. Finding or building the Ipopt library.
+ * 2. Building the custom ipopt_cnlp interface linking to the found/built Ipopt in step 1.
+ * 3. Building this Rust library and linking in all necessary dependencies.
  *
- *
- * # Build Process
- *
- * 1. To satisfy goal 2. first use pkg-config to find any preinstalled ipopt libs.
- * 2. If nothing is found in pkg-config, we try to build ipopt from source on supoorted platforms
- *    with MKL (currently only macOS) to maintain the most optimal build.
- * 3. To satisfy goal 1. if the steps above fail, we will download the prebuild libraries from
- *    https://github.com/JuliaOpt/IpoptBuilder/releases which is already referenced on the official
- *    Ipopt webpage as a source of prebuilt binaries.
  */
 use std::fs::File;
 use std::io::{BufWriter, Write};
@@ -270,7 +260,7 @@ fn try_system_install() -> Result<LinkInfo, Error> {
 
         if lib_ipopt.exists() && include_ipopt.exists() {
             let link_info = LinkInfo {
-                libs: vec![(LibType::Dynamic, "ipopt".to_string())],
+                libs: vec![(LibKind::Dynamic, "ipopt".to_string())],
                 search_paths: vec![lib],
                 include_paths: vec![include],
             };
@@ -374,7 +364,7 @@ fn download_and_install_prebuilt_binary() -> Result<LinkInfo, Error> {
     )?;
 
     let link_info = LinkInfo {
-        libs: vec![(LibType::Dynamic, "ipopt".to_string())],
+        libs: vec![(LibKind::Dynamic, "ipopt".to_string())],
         search_paths: vec![lib_dir],
         include_paths: vec![install_dir.join("include")]
     };
@@ -472,8 +462,9 @@ fn link(cnlp_install_path: PathBuf, link_info: LinkInfo) -> Result<(), Error> {
     }
     for (dep_type, lib) in link_info.libs {
         let lib_type_str = match dep_type {
-            LibType::Dynamic => "dylib",
-            LibType::Static => "static",
+            LibKind::Dynamic => "dylib",
+            LibKind::Static => "static",
+            LibKind::Framework => "framework",
         };
         println!("cargo:rustc-link-lib={}={}", lib_type_str, lib);
     }
@@ -612,16 +603,18 @@ fn build_and_install_ipopt() -> Result<LinkInfo, Error> {
     Ok(libs_info)
 }
 
+/// The kind of library being linked by rustc.
 #[derive(Copy, Clone, Serialize, Deserialize, Debug)]
-enum LibType {
+enum LibKind {
     Dynamic,
     Static,
+    Framework, // macOS specific
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 struct LinkInfo {
     /// Libs to link in rustc.
-    libs: Vec<(LibType, String)>,
+    libs: Vec<(LibKind, String)>,
     /// Search paths for the specified libs.
     search_paths: Vec<PathBuf>,
     /// Include directories.
@@ -653,7 +646,7 @@ fn build_with_mkl(install_dir: &Path, debug: bool) -> Result<LinkInfo, Error> {
 
     dbg!(&mkl_libs_path);
 
-    let mut link_libs = vec![(LibType::Static, "ipopt".to_string())];
+    let mut link_libs = vec![(LibKind::Static, "ipopt".to_string())];
 
     let blas = {
         if !mkl_libs_path.exists() {
@@ -700,7 +693,7 @@ fn build_with_mkl(install_dir: &Path, debug: bool) -> Result<LinkInfo, Error> {
     run("make", |cmd| cmd.arg("install")); // Install to install_dir
 
     if cfg!(unix) {
-        // Strip redundant modules from the archive. This is an Ipopt artifact.
+        // Strip extraneous modules from the archive. This is an Ipopt artifact.
         run("ar", |cmd| cmd
             .arg("-d")
             .arg(format!("{}/lib/libipopt.a", install_dir.display()))
@@ -718,10 +711,10 @@ fn build_with_mkl(install_dir: &Path, debug: bool) -> Result<LinkInfo, Error> {
             .arg("lt3-libmkl_core.a"));
     }
 
-    link_libs.push((LibType::Static, mkl_libs[0].to_string()));
-    link_libs.push((LibType::Static, mkl_libs[1].to_string()));
-    link_libs.push((LibType::Static, mkl_libs[2].to_string()));
-    link_libs.push((LibType::Dynamic, "tbb".to_string()));
+    link_libs.push((LibKind::Static, mkl_libs[0].to_string()));
+    link_libs.push((LibKind::Static, mkl_libs[1].to_string()));
+    link_libs.push((LibKind::Static, mkl_libs[2].to_string()));
+    link_libs.push((LibKind::Dynamic, "tbb".to_string()));
 
     Ok(LinkInfo {
         libs: link_libs,
@@ -730,8 +723,8 @@ fn build_with_mkl(install_dir: &Path, debug: bool) -> Result<LinkInfo, Error> {
     })
 }
 
-fn check_pkg_config_lib_type(lib_name: &str, lib: &pkg_config::Library) -> LibType {
-    let mut lib_type = LibType::Dynamic;
+fn check_pkg_config_lib_type(lib_name: &str, lib: &pkg_config::Library) -> LibKind {
+    let mut lib_type = LibKind::Dynamic;
 
     if cfg!(target_os = "linux") {
         // Check if there is a static library, in which case link to that. Otherwise fallback
@@ -739,7 +732,7 @@ fn check_pkg_config_lib_type(lib_name: &str, lib: &pkg_config::Library) -> LibTy
         let static_lib = format!("lib{}.a", lib_name);
         for path in lib.link_paths.iter() {
             if path.join(&static_lib).exists() {
-                lib_type = LibType::Static;
+                lib_type = LibKind::Static;
             }
         }
     }
@@ -783,7 +776,7 @@ fn find_linux_lib(library: &str, header: &str) -> Result<LinkInfo, Error> {
 
         if lib_path.exists() && include_path.exists() {
             let link_info = LinkInfo {
-                libs: vec![(LibType::Dynamic, library.to_string())],
+                libs: vec![(LibKind::Dynamic, library.to_string())],
                 search_paths: vec![lib],
                 include_paths: vec![include],
             };
@@ -797,6 +790,13 @@ fn find_linux_lib(library: &str, header: &str) -> Result<LinkInfo, Error> {
 fn build_with_default_blas(install_dir: &Path, debug: bool) -> Result<LinkInfo, Error> {
     let build_dir = env::current_dir().unwrap();
     let root_dir = build_dir.parent().unwrap().parent().unwrap();
+    let mut link_libs = vec![
+        (LibKind::Static, "ipopt".to_string()),
+    ];
+    let mut search_paths = vec![install_dir.join("lib")];
+    let mut include_paths = vec![install_dir.join("include")];
+
+    // Build prepackaged solvers.
     let third_party = root_dir.join("ThirdParty");
     let metis_dir = third_party.join("Metis");
     let mumps_dir = third_party.join("Mumps");
@@ -811,14 +811,8 @@ fn build_with_default_blas(install_dir: &Path, debug: bool) -> Result<LinkInfo, 
     run("sed", |cmd| cmd.arg("-i~").arg(set_wget_cmd).arg("get.Mumps"));
     run(env::current_dir()?.join("get.Mumps").to_str().unwrap(), |cmd| cmd);
 
-    let mut link_libs = vec![
-        (LibType::Static, "ipopt".to_string()),
-        (LibType::Static, "coinmumps".to_string()),
-        (LibType::Static, "coinmetis".to_string()),
-    ];
-
-    let mut search_paths = vec![install_dir.join("lib")];
-    let mut include_paths = vec![install_dir.join("include")];
+    link_libs.push((LibKind::Static, "coinmumps".to_string()));
+    link_libs.push((LibKind::Static, "coinmetis".to_string()));
 
     if cfg!(target_os = "linux") {
         if let Ok(mut openblas_lib) = find_linux_lib("openblas", "cblas.h") {
@@ -835,12 +829,16 @@ fn build_with_default_blas(install_dir: &Path, debug: bool) -> Result<LinkInfo, 
             env::set_current_dir(lapack_dir).unwrap();
             run("sed", |cmd| cmd.arg("-i~").arg(set_wget_cmd).arg("get.Lapack"));
             run(env::current_dir()?.join("get.Lapack").to_str().unwrap(), |cmd| cmd);
-            link_libs.push((LibType::Static, "coinblas".to_string()));
-            link_libs.push((LibType::Static, "coinlapack".to_string()));
+            link_libs.push((LibKind::Static, "coinblas".to_string()));
+            link_libs.push((LibKind::Static, "coinlapack".to_string()));
         }
         // This is a prerequisite on linux systems
-        link_libs.push((LibType::Dynamic, "gfortran".to_string()));
-    } // macOS ships with the Accelerate framework.
+        link_libs.push((LibKind::Dynamic, "gfortran".to_string()));
+    } else if cfg!(target_os = "macos") {
+        // macOS ships with the Accelerate framework.
+        link_libs.push((LibKind::Dynamic, "gfortran".to_string()));
+        link_libs.push((LibKind::Framework, "Accelerate".to_string()));
+    }
 
     env::set_current_dir(&build_dir).unwrap();
 
