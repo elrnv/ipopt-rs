@@ -2,7 +2,7 @@
 name = "ipopt"
 version = "0.5.1"
 authors = ["Egor Larionov <egor.larionov@gmail.com>"]
-license = "Apache-2.0 or MIT"
+license = "MIT OR Apache-2.0"
 description = "Rust language bindings for the Ipopt non-linear constrained optimization library."
 readme = "README.md"
 edition = "2018"
