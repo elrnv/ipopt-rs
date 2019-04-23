@@ -25,12 +25,12 @@ Currently supported methods for getting the Ipopt library:
   3. Build Ipopt from source. You will need fortran compiler libs installed (e.g. `libgfortran`) and
      one of the following options for linear solvers:
 
-    a. Linking against MKL. (set `MKLROOT` environment variable to specify a custom MKL installation
-       path or if the system path is not found.)
+     a. Linking against MKL. (set `MKLROOT` environment variable to specify a custom MKL installation
+        path or if the system path is not found.)
 
-    b. Building with MUMPS/METIS and linking against a system installed OpenBLAS library (Linux) or
-       Accelerate framework (macOS). If no system BLAS/LAPACK libraries are found, then the default
-       netlib implementations will be pulled and built.
+     b. Building with MUMPS/METIS and linking against a system installed OpenBLAS library (Linux) or
+        Accelerate framework (macOS). If no system BLAS/LAPACK libraries are found, then the default
+        netlib implementations will be pulled and built.
 
   4. Download a prebuilt dynamic Ipopt library from JuliaOpt.
 
