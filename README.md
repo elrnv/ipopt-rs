@@ -109,7 +109,7 @@ As it stands, this library is still immature in terms of platform support. There
 improve this. For instance Windows is not currently supported until I get a Windows machine or
 somebody else pitches in to provide the support ;)
 
-For details on how Ipopt binaries are acquired see [ipopt-sys](ipopt-sys/README.md).
+For details on how Ipopt binaries are acquired see [ipopt-sys](ipopt-sys).
 
 
 # License
