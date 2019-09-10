@@ -1599,6 +1599,12 @@ impl Display for CreateError {
     }
 }
 
+impl std::error::Error for CreateError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        None
+    }
+}
+
 impl From<CreateProblemStatus> for CreateError {
     fn from(_s: CreateProblemStatus) -> CreateError {
         CreateError::Unknown
