@@ -125,6 +125,7 @@ pub use crate::ffi::{
 };
 
 use std::ffi::CString;
+use std::fmt::{Debug, Display, Formatter};
 use std::slice;
 
 /// The non-linear problem to be solved by Ipopt. This trait specifies all the
@@ -487,8 +488,8 @@ pub struct Ipopt<P: BasicProblem> {
 }
 
 /// Implement debug for Ipopt.
-impl<P: BasicProblem + std::fmt::Debug> std::fmt::Debug for Ipopt<P> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl<P: BasicProblem + Debug> Debug for Ipopt<P> {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         write!(f,
                "Ipopt {{ nlp_internal: {:?}, nlp_interface: {:?}, intermediate_callback: {:?}, num_primal_variables: {:?}, num_dual_variables: {:?} }}",
                self.nlp_internal,
@@ -1384,6 +1385,127 @@ pub enum SolveStatus {
     UnknownError,
 }
 
+impl Display for SolveStatus {
+    fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
+        match *self {
+            SolveSucceeded => write!("
+                Console Message: `EXIT: Optimal Solution Found.`\n\n\
+                This message indicates that IPOPT found a (locally) optimal point within the desired \
+                tolerances."),
+
+            SolvedToAcceptableLevel => write!("
+                Console Message: `EXIT: Solved To Acceptable Level.`\n\n\
+                This indicates that the algorithm did not converge to the \"desired\" tolerances, but \
+                that it was able to obtain a point satisfying the \"acceptable\" tolerance level as \
+                specified by the `acceptable_*` options. This may happen if the desired tolerances \
+                are too small for the current problem."),
+
+            FeasiblePointFound => write!("
+                Console Message: `EXIT: Feasible point for square problem found.`\n\n\
+                This message is printed if the problem is \"square\" (i.e., it has as many equality \
+                constraints as free variables) and IPOPT found a feasible point."),
+
+            InfeasibleProblemDetected => write!("
+                Console Message: `EXIT: Converged to a point of local infeasibility. Problem may be \
+                infeasible.`\n\n\
+                The restoration phase converged to a point that is a minimizer for the constraint \
+                violation (in the l1-norm), but is not feasible for the original problem. This \
+                indicates that the problem may be infeasible (or at least that the algorithm is stuck \
+                at a locally infeasible point). The returned point (the minimizer of the constraint \
+                violation) might help you to find which constraint is causing the problem. If you \
+                believe that the NLP is feasible, it might help to start the optimization from a \
+                different point."),
+
+            SearchDirectionBecomesTooSmall => write!("
+                Console Message: `EXIT: Search Direction is becoming Too Small.`\n\n\
+                This indicates that IPOPT is calculating very small step sizes and is making very \
+                little progress. This could happen if the problem has been solved to the best numerical \
+                accuracy possible given the current scaling."),
+
+            DivergingIterates => write!("
+                Console Message: `EXIT: Iterates diverging; problem might be unbounded.`\n\n\
+                This message is printed if the max-norm of the iterates becomes larger than the value \
+                of the option `diverging_iterates_tol`. This can happen if the problem is unbounded \
+                below and the iterates are diverging."),
+
+            UserRequestedStop => write!("
+                Console Message: `EXIT: Stopping optimization at current point as requested by \
+                user.`\n\n\
+                This message is printed if the user call-back method intermediate_callback returned \
+                false."),
+
+            MaximumIterationsExceeded => write!("
+                Console Message: `EXIT: Maximum Number of Iterations Exceeded.`\n\n\
+                This indicates that IPOPT has exceeded the maximum number of iterations as specified by \
+                the option `max_iter`."),
+
+            MaximumCpuTimeExceeded => write!("
+                Console Message: `EXIT: Maximum CPU time exceeded.`\n\n\
+                This indicates that IPOPT has exceeded the maximum number of CPU seconds as specified \
+                by the option `max_cpu_time`."),
+
+            RestorationFailed => write!("
+                Console Message: `EXIT: Restoration Failed!`\n\n\
+                This indicates that the restoration phase failed to find a feasible point that was \
+                acceptable to the filter line search for the original problem. This could happen if the \
+                problem is highly degenerate, does not satisfy the constraint qualification, or if \
+                your NLP code provides incorrect derivative information."),
+
+            ErrorInStepComputation => write!("
+                Console Output: `EXIT: Error in step computation (regularization becomes too large?)!`\n\n\
+                This messages is printed if IPOPT is unable to compute a search direction, despite \
+                several attempts to modify the iteration matrix. Usually, the value of the \
+                regularization parameter then becomes too large. One situation where this can happen is \
+                when values in the Hessian are invalid (NaN or Inf). You can check whether this is \
+                true by using the `check_derivatives_for_naninf` option."),
+
+            InvalidOption => write!("
+                Console Message: (details about the particular error will be output to the console)\n\n\
+                This indicates that there was some problem specifying the options. See the specific \
+                message for details."),
+
+            NotEnoughDegreesOfFreedom => write!("
+                Console Message: `EXIT: Problem has too few degrees of freedom.`\n\n\
+                This indicates that your problem, as specified, has too few degrees of freedom. This \
+                can happen if you have too many equality constraints, or if you fix too many variables \
+                (IPOPT removes fixed variables by default, see also the `fixed_variable_treatment` \
+                option)."),
+
+            InvalidProblemDefinition => write!("
+                Console Message: (no console message, this is a return code for the C and Fortran \
+                interfaces only.)\n\n\
+                This indicates that there was an exception of some sort when building the \
+                IpoptProblem structure in the C or Fortran interface. Likely there is an error in \
+                your model or the main routine."),
+
+            InvalidNumberDetected => write!("An invalid number like `NaN` was detected."),
+
+            UnrecoverableException => write!("
+                Console Message: (details about the particular error will be output to the \
+                console)\n\n\
+                This indicates that IPOPT has thrown an exception that does not have an internal \
+                return code. See the specific message for details."),
+
+            NonIpoptExceptionThrown => write!("
+                Console Message: `Unknown Exception caught in Ipopt`\n\n\
+                An unknown exception was caught in IPOPT. This exception could have originated from \
+                your model or any linked in third party code."),
+
+            InsufficientMemory => write!("
+                Console Message: `EXIT: Not enough memory.`\n\n\
+                An error occurred while trying to allocate memory. The problem may be too large for \
+                your current memory and swap configuration."),
+
+            InternalError => write!("
+                Console: `EXIT: INTERNAL ERROR: Unknown SolverReturn value - Notify IPOPT Authors.`\n\n\
+                An unknown internal error has occurred. Please notify the authors of IPOPT via the \
+                mailing list."),
+
+            UnknownError => write!("Unclassified error."),
+        }
+    }
+}
+
 #[allow(non_snake_case)]
 impl SolveStatus {
     fn new(status: ffi::CNLP_ApplicationReturnStatus) -> Self {
@@ -1447,11 +1569,29 @@ pub enum CreateError {
     InvalidConstraintJacobian {
         /// Number of constraints set in the problem.
         num_constraints: usize,
-        /// Number of constraint jacobian entries specified for the problem.
+        /// Number of constraint Jacobian entries specified for the problem.
         num_constraint_jac_nnz: usize,
     },
-    /// Unexpected error occureed: None of the above. This is likely an internal bug.
+    /// Unexpected error occurred: None of the above. This is likely an internal bug.
     Unknown,
+}
+
+impl Display for CreateError {
+    fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
+        match *self {
+            NoOptimizationVariablesSpecified => write!("No optimization variables were provided."),
+            InvalidConstraintJacobian {
+                num_constraints,
+                num_constraint_jac_nnz,
+            } => write!(
+                "The number of constraint Jacobian elements ({}) is inconsistent with the \
+                 number of constraints ({}).",
+                num_constraint_jac_nnz,
+                num_constraints
+            ),
+            Unknown => write!("Unexpected error occurred. This is likely an internal bug."),
+        }
+    }
 }
 
 impl From<CreateProblemStatus> for CreateError {
@@ -1478,7 +1618,7 @@ enum CreateProblemStatus {
     MissingEvalGradF,
     /// Inconsistent problem definition.
     InvalidProblemDefinition,
-    /// Unexpected error occured: None of the above. This is likely an internal bug.
+    /// Unexpected error occurred: None of the above. This is likely an internal bug.
     UnknownError,
 }
 
