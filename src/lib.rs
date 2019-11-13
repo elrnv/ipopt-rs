@@ -1617,8 +1617,6 @@ enum CreateProblemStatus {
     /// Program creation was successful. This variant should never be returned, instead a
     /// successfully built instance is returned in a `Result` struct.
     Success,
-    /// Missing callback for determining sizes of data arrays .
-    MissingSizes,
     /// The initial guess callback is missing.
     MissingInitialGuess,
     /// Missing callback for evaluating variable and constraint bounds.
