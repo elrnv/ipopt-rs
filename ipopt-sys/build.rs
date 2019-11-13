@@ -624,10 +624,19 @@ fn build_with_mkl(install_dir: &Path, debug: bool) -> Result<LinkInfo, Error> {
     let mkl_root = env::var("MKLROOT");
     dbg!(&mkl_root);
     let mkl_libs_path = if let Ok(mkl_root) = mkl_root {
-        PathBuf::from(mkl_root).join("lib")
+        let libs_path = PathBuf::from(mkl_root).join("lib");
+        let intel64_libs_path = libs_path.clone().join("intel64");
+        if intel64_libs_path.exists() {
+            intel64_libs_path
+        } else {
+            libs_path
+        }
     } else {
         let opt_path = PathBuf::from("/opt/intel/mkl/lib");
-        if opt_path.exists() { // directory exists
+        let opt_path_intel64 = opt_path.clone().join("intel64");
+        if opt_path_intel64.exists() { // directory exists
+            opt_path_intel64
+        } else if opt_path.exists() {
             opt_path
         } else {
             let usr_lib_path = PathBuf::from("/usr/lib/x86_64-linux-gnu");
