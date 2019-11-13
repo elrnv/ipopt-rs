@@ -683,7 +683,8 @@ fn build_with_mkl(install_dir: &Path, debug: bool) -> Result<LinkInfo, Error> {
         }
     });
 
-    run("make", |cmd| cmd.arg(format!("-j{}", num_cpus::get())));
+    let num_cpus = env::var("NUM_JOBS").unwrap_or(1);
+    run("make", |cmd| cmd.arg(format!("-j{}", num_cpus)));
     //run("make", |cmd| cmd.arg("test")); // Ensure everything is working
     run("make", |cmd| cmd.arg("install")); // Install to install_dir
 
@@ -849,7 +850,8 @@ fn build_with_default_blas(install_dir: &Path, debug: bool) -> Result<LinkInfo, 
         }
     });
 
-    run("make", |cmd| cmd.arg(format!("-j{}", num_cpus::get())));
+    let num_cpus = env::var("NUM_JOBS").unwrap_or(1);
+    run("make", |cmd| cmd.arg(format!("-j{}", num_cpus)));
     //run("make", |cmd| cmd.arg("test")); // Ensure everything is working
     run("make", |cmd| cmd.arg("install")); // Install to install_dir
 

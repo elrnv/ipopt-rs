@@ -18,6 +18,7 @@ Contributions are welcome!
 
 We provide a number of options for building Ipopt from source as well as different methods for
 retrieving binaries.
+Building also requires the `openssl` and `libclang` system libraries.
 Currently supported methods for getting the Ipopt library:
 
   1. Using pkg-config to find a system installed static or dynamic library.
