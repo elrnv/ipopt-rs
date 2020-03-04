@@ -41,12 +41,12 @@ use std::{env, fs};
 use tar::Archive;
 
 const LIBRARY: &str = "ipopt";
-const SOURCE_URL: &str = "https://www.coin-or.org/download/source/Ipopt";
-const VERSION: &str = "3.12.10";
+const SOURCE_URL: &str = "https://github.com/coin-or/Ipopt/archive/releases/";
+const VERSION: &str = "3.12.13";
 const MIN_VERSION: &str = "3.11.9";
 const BINARY_DL_URL: &str = "https://github.com/JuliaOpt/IpoptBuilder/releases/download/";
-const SOURCE_MD5: &str = "ee250ece251a82dc2580efa51f79d758";
-const SOURCE_SHA1: &str = "5eb1aefb2f9acfd8b1b5838370528ac1d73787d6";
+const SOURCE_MD5: &str = "9c054d4a4ce1b012a8ca168d9cbef6c6";
+const SOURCE_SHA1: &str = "decf7e30acceb7cd80b6cd582ab6ea6c924ac6f9";
 
 #[cfg(target_os = "macos")]
 mod platform {
@@ -520,13 +520,13 @@ fn download_tarball(tarball_path: &Path, binary_url: &str, md5: &str, sha1: &str
 fn build_and_install_ipopt() -> Result<LinkInfo, Error> {
     // Compile ipopt from source
     // Build URL to download from
-    let binary_url = format!("{}/Ipopt-{}.tgz", SOURCE_URL, VERSION);
+    let binary_url = format!("{}{}.tar.gz", SOURCE_URL, VERSION);
     dbg!(&binary_url);
 
     // Extract the filename from the URL
     let file_name = binary_url.split("/").last().unwrap();
     let mut base_name = file_name.to_string();
-    remove_suffix(&mut base_name, ".tgz");
+    remove_suffix(&mut base_name, ".tar.gz");
     dbg!(&base_name);
 
     // Create download directory if it doesn't yet exist
@@ -544,7 +544,7 @@ fn build_and_install_ipopt() -> Result<LinkInfo, Error> {
     }
 
     // Download, extract and compile the tarball if the library isn't there.
-    let unpacked_dir = download_dir.join(base_name);
+    let unpacked_dir = download_dir.join(&format!("Ipopt-releases-{}", VERSION));
     let output = PathBuf::from(&env::var("OUT_DIR").unwrap());
     let install_dir = output.clone();
     let library_file = format!("lib{}.{}", LIBRARY, LIB_EXT);
@@ -658,12 +658,13 @@ fn build_with_mkl(install_dir: &Path, debug: bool) -> Result<LinkInfo, Error> {
         } else {
             let lib_prefix = format!("{}/lib", mkl_libs_path.display());
             let aux_libs = format!("-L{mkl} -ltbb -lpthread -lm -ldl", mkl = mkl_libs_path.display());
-            let mkl_libs_str = format!("{lib}{l1}.a {lib}{l2}.a {lib}{l3}.a", 
-                    lib = lib_prefix,
-                    l1 = mkl_libs[0],
-                    l2 = mkl_libs[1],
-                    l3 = mkl_libs[2])
-                ;
+            
+            let mut mkl_libs_str = String::new();
+            for mkl_lib in mkl_libs.iter() {
+                mkl_libs_str.push_str(&lib_prefix);
+                mkl_libs_str.push_str(mkl_lib);
+                mkl_libs_str.push_str(".a ");
+            }
             if cfg!(target_os = "macos") {
                 format!( "--with-blas={mkl} {aux} -lc++", mkl=mkl_libs_str, aux=aux_libs)
             } else if cfg!(target_os = "linux") {
@@ -716,9 +717,9 @@ fn build_with_mkl(install_dir: &Path, debug: bool) -> Result<LinkInfo, Error> {
             .arg("lt3-libmkl_core.a"));
     }
 
-    link_libs.push((LibKind::Static, mkl_libs[0].to_string()));
-    link_libs.push((LibKind::Static, mkl_libs[1].to_string()));
-    link_libs.push((LibKind::Static, mkl_libs[2].to_string()));
+    for mkl_lib in mkl_libs.iter() {
+        link_libs.push((LibKind::Static, mkl_lib.to_string()));
+    }
     link_libs.push((LibKind::Dynamic, "tbb".to_string()));
 
     Ok(LinkInfo {
