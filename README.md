@@ -5,7 +5,7 @@ library.
 
 [![On crates.io](https://img.shields.io/crates/v/ipopt.svg)](https://crates.io/crates/ipopt)
 [![On docs.rs](https://docs.rs/ipopt/badge.svg)](https://docs.rs/ipopt/)
-[![Build status](https://gitlab.com/elrnv/ipopt-rs/badges/master/pipeline.svg)](https://gitlab.com/elrnv/ipopt-rs/pipelines)
+[![Build status](https://travis-ci.org/elrnv/ipopt-rs.svg?branch=master)](https://travis-ci.org/elrnv/ipopt-rs)
 
 From the Ipopt webpage:
 
