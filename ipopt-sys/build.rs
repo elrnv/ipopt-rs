@@ -46,6 +46,9 @@ const SOURCE_URL: &str = "https://github.com/coin-or/Ipopt/archive/releases/";
 const VERSION: &str = "3.12.13";
 const MIN_VERSION: &str = "3.11.9";
 const BINARY_DL_URL: &str = "https://github.com/JuliaOpt/IpoptBuilder/releases/download/";
+// hashes For 3.13.0:
+//const SOURCE_MD5: &str = "e6a8d1626b38a816b3ea381b85dfabb6";
+//const SOURCE_SHA1: &str = "73c427ce4cae1081f2b3fd9007fba3180c3c6f9d";
 const SOURCE_MD5: &str = "9c054d4a4ce1b012a8ca168d9cbef6c6";
 const SOURCE_SHA1: &str = "decf7e30acceb7cd80b6cd582ab6ea6c924ac6f9";
 
