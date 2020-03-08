@@ -4,6 +4,7 @@ project( IpoptCNLP )
 
 set(CMAKE_CXX_FLAGS_DEBUG "-g -Wall")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
+set(CMAKE_CXX_STANDARD 11)
 
 # The following three lines constitute the Ipopt find script
 set( Ipopt_INCLUDE_DIRS "NOTFOUND" CACHE STRING "Ipopt include paths")
