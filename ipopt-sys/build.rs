@@ -15,7 +15,8 @@
 use curl::easy::Easy;
 use flate2::read::GzDecoder;
 use lazy_static::lazy_static;
-use serde::{Serialize, Deserialize};
+use log::*;
+use serde::{Deserialize, Serialize};
 
 /**
  * # Goals
@@ -48,6 +49,15 @@ const BINARY_DL_URL: &str = "https://github.com/JuliaOpt/IpoptBuilder/releases/d
 const SOURCE_MD5: &str = "9c054d4a4ce1b012a8ca168d9cbef6c6";
 const SOURCE_SHA1: &str = "decf7e30acceb7cd80b6cd582ab6ea6c924ac6f9";
 
+const MUMPS_VERSION: &str = "1.6.2";
+const MUMPS_URL: &str = "https://github.com/coin-or-tools/ThirdParty-Mumps/archive/releases/";
+const MUMPS_MD5: &str = "22cb30f1f79489095d290e6a27832c0e";
+const MUMPS_SHA1: &str = "bd4c8d3f941940c509c76e9420e1523c24b3ae99";
+const METIS_VERSION: &str = "1.3.9";
+const METIS_URL: &str = "https://github.com/coin-or-tools/ThirdParty-Metis/archive/releases/";
+const METIS_MD5: &str = "1811597f87787dcf996c0ae41f4416c9";
+const METIS_SHA1: &str = "a2cc549be601bc78543e5cf5f21ee1438a66fd24";
+
 #[cfg(target_os = "macos")]
 mod platform {
     // For some reason I couldn't build and link to Ipopt as a static lib on macos, so this is here.
@@ -77,18 +87,17 @@ mod family {
 
 #[cfg(target_os = "windows")]
 mod platform {
-    pub static BUILD_FLAGS: [&str;1] = [""];
+    pub static BUILD_FLAGS: [&str; 1] = [""];
     pub static LIB_EXT: &str = "dll";
     pub static DYNAMIC_LIB_EXT: &str = "dll";
     pub static BINARY_SUFFIX: &str = "x86_64-w64-mingw32-gcc8.tar.gz";
 }
 
 #[cfg(target_os = "windows")]
-mod family {
-}
+mod family {}
 
-use crate::platform::*;
 use crate::family::*;
+use crate::platform::*;
 
 lazy_static! {
     static ref BINARY_NAME: String = format!(
@@ -104,7 +113,15 @@ lazy_static! {
     );
 }
 
+fn init_logger() {
+    let mut builder = env_logger::Builder::from_default_env();
+    builder.format_timestamp(None).format_module_path(false);
+    builder.init();
+}
+
 fn main() {
+    init_logger();
+
     let mut msg = String::from("\n\n");
 
     // Try to find Ipopt preinstalled.
@@ -115,7 +132,10 @@ fn main() {
             return;
         }
         Err(err) => {
-            msg.push_str(&format!("Failed to find Ipopt using pkg-config: {:?}\n\n", err));
+            msg.push_str(&format!(
+                "Failed to find Ipopt using pkg-config: {:?}\n\n",
+                err
+            ));
         }
     }
 
@@ -128,7 +148,10 @@ fn main() {
             return;
         }
         Err(err) => {
-            msg.push_str(&format!("Failed to find Ipopt installed on the system: {:?}\n\n", err));
+            msg.push_str(&format!(
+                "Failed to find Ipopt installed on the system: {:?}\n\n",
+                err
+            ));
         }
     }
 
@@ -150,7 +173,10 @@ fn main() {
             return;
         }
         Err(err) => {
-            msg.push_str(&format!("Failed to download and install Ipopt binaries: {:?}\n\n", err));
+            msg.push_str(&format!(
+                "Failed to download and install Ipopt binaries: {:?}\n\n",
+                err
+            ));
         }
     }
 
@@ -181,7 +207,6 @@ impl From<curl::Error> for Error {
     }
 }
 
-
 // The following convenience functions produce the correct library filename for the corresponding
 // platform when downloading the binaries. We always download dynamic libs.
 
@@ -198,9 +223,15 @@ fn versioned_library_name() -> String {
 #[cfg(target_family = "unix")]
 fn versioned_library_name() -> String {
     if cfg!(target_os = "macos") {
-        format!("lib{}.{}.{}.{}", LIBRARY, LIB_MAJ_VER, LIB_MIN_VER, DYNAMIC_LIB_EXT)
+        format!(
+            "lib{}.{}.{}.{}",
+            LIBRARY, LIB_MAJ_VER, LIB_MIN_VER, DYNAMIC_LIB_EXT
+        )
     } else {
-        format!("lib{}.{}.{}.{}", LIBRARY, DYNAMIC_LIB_EXT, LIB_MAJ_VER, LIB_MIN_VER)
+        format!(
+            "lib{}.{}.{}.{}",
+            LIBRARY, DYNAMIC_LIB_EXT, LIB_MAJ_VER, LIB_MIN_VER
+        )
     }
 }
 
@@ -223,7 +254,12 @@ fn try_pkg_config() -> Result<LinkInfo, Error> {
         Ok(lib) => {
             let lib_type = check_pkg_config_lib_type(LIBRARY, &lib);
             let link_info = LinkInfo {
-                libs: lib.libs.iter().cloned().map(|lib| (lib_type, lib)).collect(),
+                libs: lib
+                    .libs
+                    .iter()
+                    .cloned()
+                    .map(|lib| (lib_type, lib))
+                    .collect(),
                 search_paths: lib.link_paths.clone(),
                 include_paths: lib.include_paths.clone(),
             };
@@ -231,7 +267,7 @@ fn try_pkg_config() -> Result<LinkInfo, Error> {
             save_link_info(&link_info)?;
 
             Ok(link_info)
-        },
+        }
         Err(_) => Err(Error::PkgConfigNotFound),
     }
 }
@@ -243,9 +279,9 @@ fn system_install_paths() -> Vec<(PathBuf, PathBuf)> {
         ("/usr/local/lib", "/usr/local/include"),
         ("/usr/lib/x86_64-linux-gnu", "/usr/include/x86_64-linux-gnu"),
     ]
-        .into_iter()
-        .map(|(l,i)| (PathBuf::from(l), PathBuf::from(i)))
-        .collect()
+    .into_iter()
+    .map(|(l, i)| (PathBuf::from(l), PathBuf::from(i)))
+    .collect()
 }
 
 // Just check system libs. There may be something there.
@@ -254,7 +290,7 @@ fn try_system_install() -> Result<LinkInfo, Error> {
     for (lib, include) in system_install_paths().into_iter() {
         // Try to find a Dynamic lib. We don't try to find static libs here, because we don't know
         // how they should be linked without something like pkg-config.
-        
+
         let lib_ipopt = lib.join(major_versioned_library_name());
         let include_ipopt = include.join("coin").join("IpIpoptApplication.hpp");
 
@@ -273,23 +309,25 @@ fn try_system_install() -> Result<LinkInfo, Error> {
 
 /// Download the ipopt prebuilt binary from JuliaOpt and install it.
 fn download_and_install_prebuilt_binary() -> Result<LinkInfo, Error> {
+    info!("Download and install prebuilt Ipopt binary");
+
     let file_name = BINARY_NAME.clone();
 
     // Extract the filename from the URL
     let mut base_name = file_name.clone();
     remove_suffix(&mut base_name, ".tar.gz");
-    dbg!(&base_name);
+    debug!("base_name = {}", &base_name);
 
     // Create download directory if it doesn't yet exist
     let crate_dir = PathBuf::from(&env::var("CARGO_MANIFEST_DIR").unwrap());
     let target_dir = crate_dir.join("target");
-    dbg!(&target_dir);
+    debug!("target_dir = {:?}", &target_dir);
     if !target_dir.exists() {
         fs::create_dir(&target_dir).unwrap();
     }
 
     let download_dir = target_dir.join(format!("ipopt-{}-binaries", VERSION));
-    dbg!(&download_dir);
+    debug!("download_dir = {:?}", &download_dir);
     if !download_dir.exists() {
         fs::create_dir(&download_dir).unwrap();
     }
@@ -301,7 +339,7 @@ fn download_and_install_prebuilt_binary() -> Result<LinkInfo, Error> {
     let library_file = versioned_library_name();
     let lib_dir = install_dir.join("lib");
     let library_path = lib_dir.join(&library_file);
-    dbg!(&library_path);
+    debug!("library_path = {:?}", &library_path);
 
     if library_path.exists() {
         // Nothing to be done, library is already installed
@@ -316,16 +354,16 @@ fn download_and_install_prebuilt_binary() -> Result<LinkInfo, Error> {
 
     // Build destination path
     let tarball_path = download_dir.join(file_name);
-    dbg!(&tarball_path);
+    debug!("tarball_path = {:?}", &tarball_path);
 
     if !tarball_path.exists() {
         download_tarball(&tarball_path, &BINARY_URL, BINARY_MD5, BINARY_SHA1)?;
     }
 
     // Remove previously extracted files if any
-    dbg!(&unpacked_dir);
+    debug!("unpacked_dir = {:?}", &unpacked_dir);
     fs::remove_dir_all(&unpacked_dir).ok();
-    
+
     extract_tarball(tarball_path, &unpacked_dir);
 
     // Copy lib
@@ -338,7 +376,7 @@ fn download_and_install_prebuilt_binary() -> Result<LinkInfo, Error> {
     // Make links (on unix only)
     if cfg!(unix) {
         use std::os::unix::fs::symlink;
-        eprintln!("Creating symlinks for dynamic libraries...");
+        info!("Creating symlinks for dynamic libraries...");
         symlink(&library_path, lib_dir.join(major_versioned_library_name()))?;
         symlink(&library_path, lib_dir.join(library_name()))?;
     }
@@ -357,16 +395,17 @@ fn download_and_install_prebuilt_binary() -> Result<LinkInfo, Error> {
 
     // Copy the actual library last because we use its existence to check if everything above has
     // already been done correctly.
-    eprintln!("Copying {} to {}", downloaded_lib_path.display(), library_path.display());
-    fs::copy(
-        downloaded_lib_path,
-        &library_path,
-    )?;
+    info!(
+        "Copying {} to {}",
+        downloaded_lib_path.display(),
+        library_path.display()
+    );
+    fs::copy(downloaded_lib_path, &library_path)?;
 
     let link_info = LinkInfo {
         libs: vec![(LibKind::Dynamic, "ipopt".to_string())],
         search_paths: vec![lib_dir],
-        include_paths: vec![install_dir.join("include")]
+        include_paths: vec![install_dir.join("include")],
     };
 
     save_link_info(&link_info)?;
@@ -398,10 +437,9 @@ fn load_link_info() -> Result<LinkInfo, Error> {
     Ok(serde_json::from_str(&info).expect("Failed to deserialize link info."))
 }
 
-
 fn check_tarball_hashes(tarball_path: &Path, md5: &str, sha1: &str) -> Result<(), Error> {
-    use std::io::Read;
     use crypto::digest::Digest;
+    use std::io::Read;
 
     {
         let mut f = File::open(tarball_path)?;
@@ -488,9 +526,14 @@ fn link(cnlp_install_path: PathBuf, link_info: LinkInfo) -> Result<(), Error> {
 }
 
 /// Download a tarball if it doesn't already exist.
-fn download_tarball(tarball_path: &Path, binary_url: &str, md5: &str, sha1: &str) -> Result<(), Error> {
+fn download_tarball(
+    tarball_path: &Path,
+    binary_url: &str,
+    md5: &str,
+    sha1: &str,
+) -> Result<(), Error> {
     if !tarball_path.exists() {
-        eprintln!("Tarball doesn't exist, downloading...");
+        info!("Tarball doesn't exist, downloading...");
         let f = File::create(tarball_path).unwrap();
         let mut writer = BufWriter::new(f);
         let mut easy = Easy::new();
@@ -507,7 +550,7 @@ fn download_tarball(tarball_path: &Path, binary_url: &str, md5: &str, sha1: &str
                 url: binary_url.to_string(),
             });
         } else {
-            eprintln!("Download successful!");
+            info!("Download successful!");
         }
     }
 
@@ -521,24 +564,24 @@ fn build_and_install_ipopt() -> Result<LinkInfo, Error> {
     // Compile ipopt from source
     // Build URL to download from
     let binary_url = format!("{}{}.tar.gz", SOURCE_URL, VERSION);
-    dbg!(&binary_url);
+    debug!("binary_url = {}", &binary_url);
 
     // Extract the filename from the URL
     let file_name = binary_url.split("/").last().unwrap();
     let mut base_name = file_name.to_string();
     remove_suffix(&mut base_name, ".tar.gz");
-    dbg!(&base_name);
+    debug!("base_name = {}", &base_name);
 
     // Create download directory if it doesn't yet exist
     let crate_dir = PathBuf::from(&env::var("CARGO_MANIFEST_DIR").unwrap());
     let target_dir = crate_dir.join("target");
-    dbg!(&target_dir);
+    debug!("target_dir = {:?}", &target_dir);
     if !target_dir.exists() {
         fs::create_dir(&target_dir).unwrap();
     }
 
     let download_dir = target_dir.join(format!("ipopt-{}-source", VERSION));
-    dbg!(&download_dir);
+    debug!("download_dir = {:?}", &download_dir);
     if !download_dir.exists() {
         fs::create_dir(&download_dir).unwrap();
     }
@@ -556,12 +599,12 @@ fn build_and_install_ipopt() -> Result<LinkInfo, Error> {
 
     // Build destination path
     let tarball_path = download_dir.join(file_name);
-    dbg!(&tarball_path);
+    debug!("tarball_path = {:?}", &tarball_path);
 
     download_tarball(&tarball_path, &binary_url, SOURCE_MD5, SOURCE_SHA1)?;
 
     // Remove previously extracted files if any
-    dbg!(&unpacked_dir);
+    debug!("unpacked_dir = {:?}", &unpacked_dir);
     fs::remove_dir_all(&unpacked_dir).ok();
 
     extract_tarball(tarball_path, &download_dir);
@@ -570,7 +613,7 @@ fn build_and_install_ipopt() -> Result<LinkInfo, Error> {
     // We shall compile ipopt in the same mode we build the sys library. This will allow users
     // to debug the internals of ipopt more easily.
     let debug: bool = env::var("DEBUG").unwrap().parse().unwrap();
-    dbg!(debug);
+    debug!("debug build? {}", debug);
 
     let build_dir = unpacked_dir
         .join("build")
@@ -583,10 +626,10 @@ fn build_and_install_ipopt() -> Result<LinkInfo, Error> {
     // Remember project root directory
     let proj_root_dir = env::current_dir().unwrap();
     env::set_current_dir(build_dir).unwrap();
-    
+
     // Build a static lib for ipopt.
-    let res = build_with_mkl(&install_dir, debug).or_else(|_|
-        build_with_default_blas(&install_dir, debug));
+    let res = build_with_mkl(&install_dir, debug)
+        .or_else(|_| build_with_default_blas(&install_dir, debug));
 
     // Restore current directory
     env::set_current_dir(proj_root_dir).unwrap();
@@ -622,7 +665,7 @@ fn build_with_mkl(install_dir: &Path, debug: bool) -> Result<LinkInfo, Error> {
 
     // Look for intel MKL and link to its libraries if found.
     let mkl_root = env::var("MKLROOT");
-    dbg!(&mkl_root);
+    debug!("mkl_root = {:?}", &mkl_root);
     let mkl_libs_path = if let Ok(mkl_root) = mkl_root {
         let libs_path = PathBuf::from(mkl_root).join("lib");
         let intel64_libs_path = libs_path.clone().join("intel64");
@@ -634,13 +677,17 @@ fn build_with_mkl(install_dir: &Path, debug: bool) -> Result<LinkInfo, Error> {
     } else {
         let opt_path = PathBuf::from("/opt/intel/mkl/lib");
         let opt_path_intel64 = opt_path.clone().join("intel64");
-        if opt_path_intel64.exists() { // directory exists
+        if opt_path_intel64.exists() {
+            // directory exists
             opt_path_intel64
         } else if opt_path.exists() {
             opt_path
         } else {
             let usr_lib_path = PathBuf::from("/usr/lib/x86_64-linux-gnu");
-            if mkl_libs.iter().all(|lib| usr_lib_path.join(format!("lib{}.a", lib)).exists()) {
+            if mkl_libs
+                .iter()
+                .all(|lib| usr_lib_path.join(format!("lib{}.a", lib)).exists())
+            {
                 usr_lib_path
             } else {
                 PathBuf::from("NOTFOUND")
@@ -648,7 +695,7 @@ fn build_with_mkl(install_dir: &Path, debug: bool) -> Result<LinkInfo, Error> {
         }
     };
 
-    dbg!(&mkl_libs_path);
+    debug!("mkl_libs_path = {:?}", &mkl_libs_path);
 
     let mut link_libs = vec![(LibKind::Static, "ipopt".to_string())];
 
@@ -657,8 +704,11 @@ fn build_with_mkl(install_dir: &Path, debug: bool) -> Result<LinkInfo, Error> {
             return Err(Error::MKLInstallNotFound);
         } else {
             let lib_prefix = format!("{}/lib", mkl_libs_path.display());
-            let aux_libs = format!("-L{mkl} -ltbb -lpthread -lm -ldl", mkl = mkl_libs_path.display());
-            
+            let aux_libs = format!(
+                "-L{mkl} -ltbb -lpthread -lm -ldl",
+                mkl = mkl_libs_path.display()
+            );
+
             let mut mkl_libs_str = String::new();
             for mkl_lib in mkl_libs.iter() {
                 mkl_libs_str.push_str(&lib_prefix);
@@ -666,11 +716,15 @@ fn build_with_mkl(install_dir: &Path, debug: bool) -> Result<LinkInfo, Error> {
                 mkl_libs_str.push_str(".a ");
             }
             if cfg!(target_os = "macos") {
-                format!( "--with-blas={mkl} {aux} -lc++", mkl=mkl_libs_str, aux=aux_libs)
+                format!(
+                    "--with-blas={mkl} {aux} -lc++",
+                    mkl = mkl_libs_str,
+                    aux = aux_libs
+                )
             } else if cfg!(target_os = "linux") {
                 // Only forward the libs to cnlp on linux because we build ipopt statically here.
                 let mkl_group = format!("-Wl,--start-group {} -Wl,--end-group", mkl_libs_str);
-                let all_libs = format!("{mkl} {aux} -lstdc++", mkl=mkl_group, aux=aux_libs);
+                let all_libs = format!("{mkl} {aux} -lstdc++", mkl = mkl_group, aux = aux_libs);
                 format!("--with-blas={}", all_libs)
             } else {
                 // Currently only support building Ipopt with MKL on macOS.
@@ -679,19 +733,28 @@ fn build_with_mkl(install_dir: &Path, debug: bool) -> Result<LinkInfo, Error> {
         }
     };
 
-    run(env::current_dir()?.parent().unwrap().parent().unwrap()
-        .join("configure").to_str().unwrap(), |cmd| {
-        let cmd = cmd
-            .arg(format!("--prefix={}", install_dir.display()))
-            .args(&BUILD_FLAGS)
-            .arg(blas.clone());
+    run(
+        env::current_dir()?
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("configure")
+            .to_str()
+            .unwrap(),
+        |cmd| {
+            let cmd = cmd
+                .arg(format!("--prefix={}", install_dir.display()))
+                .args(&BUILD_FLAGS)
+                .arg(blas.clone());
 
-        if debug {
-            cmd.arg(format!("--enable-debug-ipopt"))
-        } else {
-            cmd
-        }
-    });
+            if debug {
+                cmd.arg(format!("--enable-debug-ipopt"))
+            } else {
+                cmd
+            }
+        },
+    );
 
     let num_cpus = env::var("NUM_JOBS").unwrap_or(1.to_string());
     run("make", |cmd| cmd.arg(format!("-j{}", num_cpus)));
@@ -700,21 +763,22 @@ fn build_with_mkl(install_dir: &Path, debug: bool) -> Result<LinkInfo, Error> {
 
     if cfg!(unix) {
         // Strip extraneous modules from the archive. This is an Ipopt artifact.
-        run("ar", |cmd| cmd
-            .arg("-d")
-            .arg(format!("{}/lib/libipopt.a", install_dir.display()))
-            .arg("libmkl_intel_lp64.a")
-            .arg("libmkl_tbb_thread.a")
-            .arg("libmkl_core.a")
-            .arg("libmkl_intel_lp64.a")
-            .arg("libmkl_tbb_thread.a")
-            .arg("libmkl_core.a")
-            .arg("libmkl_intel_lp64.a")
-            .arg("libmkl_tbb_thread.a")
-            .arg("libmkl_core.a")
-            .arg("lt1-libmkl_intel_lp64.a")
-            .arg("lt2-libmkl_tbb_thread.a")
-            .arg("lt3-libmkl_core.a"));
+        run("ar", |cmd| {
+            cmd.arg("-d")
+                .arg(format!("{}/lib/libipopt.a", install_dir.display()))
+                .arg("libmkl_intel_lp64.a")
+                .arg("libmkl_tbb_thread.a")
+                .arg("libmkl_core.a")
+                .arg("libmkl_intel_lp64.a")
+                .arg("libmkl_tbb_thread.a")
+                .arg("libmkl_core.a")
+                .arg("libmkl_intel_lp64.a")
+                .arg("libmkl_tbb_thread.a")
+                .arg("libmkl_core.a")
+                .arg("lt1-libmkl_intel_lp64.a")
+                .arg("lt2-libmkl_tbb_thread.a")
+                .arg("lt3-libmkl_core.a")
+        });
     }
 
     for mkl_lib in mkl_libs.iter() {
@@ -754,12 +818,17 @@ fn find_linux_lib(library: &str, header: &str) -> Result<LinkInfo, Error> {
         .cargo_metadata(false)
         .probe(library)
     {
-        dbg!(&lib);
+        debug!("lib = {:?}", &lib);
 
         let lib_type = check_pkg_config_lib_type(library, &lib);
 
         let link_info = LinkInfo {
-            libs: lib.libs.iter().cloned().map(|lib| (lib_type, lib)).collect(),
+            libs: lib
+                .libs
+                .iter()
+                .cloned()
+                .map(|lib| (lib_type, lib))
+                .collect(),
             search_paths: lib.link_paths.clone(),
             include_paths: lib.include_paths.clone(),
         };
@@ -767,18 +836,22 @@ fn find_linux_lib(library: &str, header: &str) -> Result<LinkInfo, Error> {
         return Ok(link_info);
     }
 
-    eprintln!("Couldn't find {} with pkg-config", library);
+    info!("Couldn't find {} with pkg-config", library);
 
     // Try searching in system paths
     for (lib, include) in system_install_paths().into_iter() {
         // Try to find a Dynamic lib. We don't try to find static libs here, because we don't know
         // how they should be linked without something like pkg-config.
-        
+
         let lib_path = lib.join(format!("lib{}.so", library));
         let include_path = include.join(header);
-        eprintln!("Checking existence of {} and {}", lib_path.to_str().unwrap(), include_path.to_str().unwrap());
-        dbg!(lib_path.exists());
-        dbg!(include_path.exists());
+        info!(
+            "Checking existence of {} and {}",
+            lib_path.to_str().unwrap(),
+            include_path.to_str().unwrap()
+        );
+        debug!("lib_path exists? {}", lib_path.exists());
+        debug!("include_path exists? {}", include_path.exists());
 
         if lib_path.exists() && include_path.exists() {
             let link_info = LinkInfo {
@@ -792,13 +865,50 @@ fn find_linux_lib(library: &str, header: &str) -> Result<LinkInfo, Error> {
     Err(Error::SystemLibNotFound)
 }
 
+fn download_and_unpack_thirdparty(
+    third_party: &Path,
+    name: &str,
+    url: &str,
+    version: &str,
+    md5: &str,
+    sha1: &str,
+) -> Result<(), Error> {
+    info!(
+        "Downloading and unpacking the Third Party {} builder.",
+        name
+    );
+    let file_name = format!("{}.tar.gz", version);
+
+    // Download Metis builder
+    let tarball_path = third_party.join(&file_name);
+    debug!("tarball_path = {:?}", &tarball_path);
+
+    let binary_url = format!("{}{}", url, &file_name);
+
+    if !tarball_path.exists() {
+        download_tarball(&tarball_path, &binary_url, md5, sha1)?;
+    }
+
+    let unpacked_dir = third_party.join(name);
+
+    // Remove previously extracted files if any
+    debug!("unpacked_dir = {:?}", &unpacked_dir);
+
+    extract_tarball(tarball_path, &third_party);
+
+    // Move unpacked dir to the expected destination.
+    let dest_dir = format!("ThirdParty-{}-releases-{}", name, version);
+    fs::remove_dir_all(&unpacked_dir).ok();
+    fs::rename(third_party.join(dest_dir), &unpacked_dir)?;
+
+    Ok(())
+}
+
 // Build Ipopt static lib with Default libs.
 fn build_with_default_blas(install_dir: &Path, debug: bool) -> Result<LinkInfo, Error> {
     let build_dir = env::current_dir().unwrap();
     let root_dir = build_dir.parent().unwrap().parent().unwrap();
-    let mut link_libs = vec![
-        (LibKind::Static, "ipopt".to_string()),
-    ];
+    let mut link_libs = vec![(LibKind::Static, "ipopt".to_string())];
     let mut search_paths = vec![install_dir.join("lib")];
     let mut include_paths = vec![install_dir.join("include")];
 
@@ -807,15 +917,42 @@ fn build_with_default_blas(install_dir: &Path, debug: bool) -> Result<LinkInfo, 
     let metis_dir = third_party.join("Metis");
     let mumps_dir = third_party.join("Mumps");
 
+    download_and_unpack_thirdparty(
+        &third_party,
+        "Metis",
+        METIS_URL,
+        METIS_VERSION,
+        METIS_MD5,
+        METIS_SHA1,
+    )?;
+    download_and_unpack_thirdparty(
+        &third_party,
+        "Mumps",
+        MUMPS_URL,
+        MUMPS_VERSION,
+        MUMPS_MD5,
+        MUMPS_SHA1,
+    )?;
+
     let set_wget_cmd = "s/wgetcmd=ftp/wgetcmd=\"curl -L -O\"/g";
 
     env::set_current_dir(metis_dir).unwrap();
-    run("sed", |cmd| cmd.arg("-i~").arg(set_wget_cmd).arg("get.Metis"));
-    run(env::current_dir()?.join("get.Metis").to_str().unwrap(), |cmd| cmd);
+    run("sed", |cmd| {
+        cmd.arg("-i~").arg(set_wget_cmd).arg("get.Metis")
+    });
+    run(
+        env::current_dir()?.join("get.Metis").to_str().unwrap(),
+        |cmd| cmd,
+    );
 
     env::set_current_dir(mumps_dir).unwrap();
-    run("sed", |cmd| cmd.arg("-i~").arg(set_wget_cmd).arg("get.Mumps"));
-    run(env::current_dir()?.join("get.Mumps").to_str().unwrap(), |cmd| cmd);
+    run("sed", |cmd| {
+        cmd.arg("-i~").arg(set_wget_cmd).arg("get.Mumps")
+    });
+    run(
+        env::current_dir()?.join("get.Mumps").to_str().unwrap(),
+        |cmd| cmd,
+    );
 
     link_libs.push((LibKind::Static, "coinmumps".to_string()));
     link_libs.push((LibKind::Static, "coinmetis".to_string()));
@@ -829,12 +966,22 @@ fn build_with_default_blas(install_dir: &Path, debug: bool) -> Result<LinkInfo, 
             // Couldn't find system installed openblas. Build the blas library included with Ipopt.
             let blas_dir = third_party.join("Blas");
             env::set_current_dir(blas_dir).unwrap();
-            run("sed", |cmd| cmd.arg("-i~").arg(set_wget_cmd).arg("get.Blas"));
-            run(env::current_dir()?.join("get.Blas").to_str().unwrap(), |cmd| cmd);
+            run("sed", |cmd| {
+                cmd.arg("-i~").arg(set_wget_cmd).arg("get.Blas")
+            });
+            run(
+                env::current_dir()?.join("get.Blas").to_str().unwrap(),
+                |cmd| cmd,
+            );
             let lapack_dir = third_party.join("Lapack");
             env::set_current_dir(lapack_dir).unwrap();
-            run("sed", |cmd| cmd.arg("-i~").arg(set_wget_cmd).arg("get.Lapack"));
-            run(env::current_dir()?.join("get.Lapack").to_str().unwrap(), |cmd| cmd);
+            run("sed", |cmd| {
+                cmd.arg("-i~").arg(set_wget_cmd).arg("get.Lapack")
+            });
+            run(
+                env::current_dir()?.join("get.Lapack").to_str().unwrap(),
+                |cmd| cmd,
+            );
             link_libs.push((LibKind::Static, "coinblas".to_string()));
             link_libs.push((LibKind::Static, "coinlapack".to_string()));
         }
@@ -865,7 +1012,11 @@ fn build_with_default_blas(install_dir: &Path, debug: bool) -> Result<LinkInfo, 
     //run("make", |cmd| cmd.arg("test")); // Ensure everything is working
     run("make", |cmd| cmd.arg("install")); // Install to install_dir
 
-    Ok(LinkInfo { libs: link_libs, search_paths, include_paths })
+    Ok(LinkInfo {
+        libs: link_libs,
+        search_paths,
+        include_paths,
+    })
 }
 
 fn remove_suffix(value: &mut String, suffix: &str) {
@@ -875,8 +1026,14 @@ fn remove_suffix(value: &mut String, suffix: &str) {
     }
 }
 
-fn extract_tarball<P: AsRef<Path> + std::fmt::Debug, P2: AsRef<Path> + std::fmt::Debug>(archive_path: P, extract_to: P2) {
-    eprintln!("Extracting tarball {:?} to {:?}", &archive_path, &extract_to);
+fn extract_tarball<P: AsRef<Path> + std::fmt::Debug, P2: AsRef<Path> + std::fmt::Debug>(
+    archive_path: P,
+    extract_to: P2,
+) {
+    info!(
+        "Extracting tarball {:?} to {:?}",
+        &archive_path, &extract_to
+    );
 
     let file = File::open(archive_path).unwrap();
     let mut a = Archive::new(GzDecoder::new(file));
@@ -889,9 +1046,9 @@ where
 {
     let mut command = Command::new(name);
     let configured = configure(&mut command);
-    eprintln!("Executing {:?}", configured);
+    info!("Executing {:?}", configured);
     if !configured.status().unwrap().success() {
         panic!("failed to execute {:?}", configured);
     }
-    eprintln!("Command {:?} finished successfully", configured);
+    info!("Command {:?} finished successfully", configured);
 }
