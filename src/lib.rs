@@ -128,30 +128,34 @@ use std::ffi::CString;
 use std::fmt::{Debug, Display, Formatter};
 use std::slice;
 
-/// The non-linear problem to be solved by Ipopt. This trait specifies all the
-/// information needed to construct the unconstrained optimization problem (although the
-/// variables are allowed to be bounded).
+/// The callback interface for a non-linear problem to be solved by Ipopt.
+///
+/// This trait specifies all the information needed to construct the unconstrained optimization
+/// problem (although the variables are allowed to be bounded).
 /// In the callbacks within, `x` is the independent variable and must be the same size
 /// as returned by `num_variables`.
-/// Each of the callbacks required during interior point iterations are allowed to fail.
-/// In case of failure to produce values, simply return `false` where applicable. If the caller
-/// returns `true` but the output data was not set, then Ipopt may produce undefined behaviour.
-/// This feature could be used to tell Ipopt to try smaller perturbations for `x` for
-/// instance.
+///
+/// Each of the callbacks required during interior point iterations are allowed to fail.  In case
+/// of failure to produce values, simply return `false` where applicable.  This feature could be
+/// used to tell Ipopt to try smaller perturbations for `x` for instance. If the caller returns
+/// `true` but the output data was not set, then Ipopt may produce undefined behaviour.
 pub trait BasicProblem {
     /// Specify the indexing style used for arrays in this problem.
     /// (Default is zero-based)
     fn indexing_style(&self) -> IndexingStyle {
         IndexingStyle::CStyle
     }
+
     /// Total number of variables of the non-linear problem.
     fn num_variables(&self) -> usize;
 
     /// Specify lower and upper variable bounds given by `x_l` and `x_u` respectively.
+    ///
     /// Both slices will have the same size as what `num_variables` returns.
     fn bounds(&self, x_l: &mut [Number], x_u: &mut [Number]) -> bool;
 
     /// Construct the initial guess of the primal variables for Ipopt to start with.
+    ///
     /// The given slice has the same size as `num_variables`.
     ///
     /// This function should return whether the output slice `x` has been populated with initial
@@ -159,6 +163,7 @@ pub trait BasicProblem {
     fn initial_point(&self, x: &mut [Number]) -> bool;
 
     /// Construct the initial guess of the lower and upper bounds multipliers for Ipopt to start with.
+    ///
     /// The given slices has the same size as `num_variables`.
     /// Note that multipliers for infinity bounds are ignored.
     ///
@@ -176,14 +181,17 @@ pub trait BasicProblem {
     }
 
     /// Objective function. This is the function being minimized.
+    ///
     /// This function is internally called by Ipopt callback `eval_f`.
     fn objective(&self, x: &[Number], obj: &mut Number) -> bool;
 
-    /// Gradient of the objective function.
+    /// The gradient of the objective function speficies the search direction to Ipopt.
+    ///
     /// This function is internally called by Ipopt callback `eval_grad_f`.
     fn objective_grad(&self, x: &[Number], grad_f: &mut [Number]) -> bool;
 
     /// Provide custom variable scaling.
+    ///
     /// This method is called if the Ipopt option, `nlp_scaling_method`, is set to `user-scaling`.
     /// Return `true` if scaling is provided and `false` otherwise: if `false` is returned, Ipopt
     /// will not scale the variables.
@@ -197,6 +205,7 @@ pub trait BasicProblem {
     }
 
     /// Provide custom scaling for the objective function.
+    ///
     /// This method is called if the Ipopt option, `nlp_scaling_method`, is set to `user-scaling`.
     /// For example if this function returns `10`, then then Ipopt solves internally an optimization
     /// problem that has 10 times the value of the original objective function. If this function
@@ -208,15 +217,19 @@ pub trait BasicProblem {
     }
 }
 
-/// An extension to the `BasicProblem` trait that enables full Newton iterations in
-/// Ipopt. If this trait is NOT implemented by your problem, Ipopt will be set to perform
+/// An extension to the [`BasicProblem`](trait.BasicProblem.html) trait that enables full Newton
+/// iterations in Ipopt.
+///
+/// If this trait is NOT implemented by your problem, Ipopt will be set to perform
 /// [Quasi-Newton Approximation](https://www.coin-or.org/Ipopt/documentation/node31.html)
 /// for second derivatives.
 /// This interface asks for the Hessian matrix in sparse triplet form.
 pub trait NewtonProblem: BasicProblem {
     /// Number of non-zeros in the Hessian matrix.
     fn num_hessian_non_zeros(&self) -> usize;
-    /// Hessian indices. These are the row and column indices of the non-zeros
+    /// Hessian indices.
+    ///
+    /// These are the row and column indices of the non-zeros
     /// in the sparse representation of the matrix.
     /// This is a symmetric matrix, fill the lower left triangular half only.
     /// If your problem is constrained (i.e. you are ultimately implementing
@@ -224,14 +237,17 @@ pub trait NewtonProblem: BasicProblem {
     /// constraint hessian as well.
     /// This function is internally called by Ipopt callback `eval_h`.
     fn hessian_indices(&self, rows: &mut [Index], cols: &mut [Index]) -> bool;
-    /// Objective Hessian values. Each value must correspond to the `row` and `column` as
+    /// Objective Hessian values.
+    ///
+    /// Each value must correspond to the `row` and `column` as
     /// specified in `hessian_indices`.
     /// This function is internally called by Ipopt callback `eval_h` and each value is
     /// premultiplied by `Ipopt`'s `obj_factor` as necessary.
     fn hessian_values(&self, x: &[Number], vals: &mut [Number]) -> bool;
 }
 
-/// Extends the `BasicProblem` trait to enable equality and inequality constraints.
+/// Extends the [`BasicProblem`](trait.BasicProblem.html) trait to enable equality and inequality constraints.
+///
 /// Equality constraints are enforced by setting the lower and upper bounds for the
 /// constraint to the same value.
 /// This type of problem is the target use case for Ipopt.
@@ -245,14 +261,18 @@ pub trait ConstrainedProblem: BasicProblem {
     fn num_constraints(&self) -> usize;
     /// Number of non-zeros in the constraint Jacobian.
     fn num_constraint_jacobian_non_zeros(&self) -> usize;
-    /// Constraint function. This gives the value of each constraint.
+    /// Constraint function.
+    ///
+    /// This gives the value of each constraint.
     /// The output slice `g` is guaranteed to be the same size as `num_constraints`.
     /// This function is internally called by Ipopt callback `eval_g`.
     fn constraint(&self, x: &[Number], g: &mut [Number]) -> bool;
     /// Specify lower and upper bounds, `g_l` and `g_u` respectively, on the constraint function.
+    ///
     /// Both slices will have the same size as what `num_constraints` returns.
     fn constraint_bounds(&self, g_l: &mut [Number], g_u: &mut [Number]) -> bool;
     /// Construct the initial guess of the constraint multipliers for Ipopt to start with.
+    ///
     /// The given slice has the same size as `num_constraints`.
     ///
     /// This function should return whether the output slice `lambda` has been populated with
@@ -266,27 +286,37 @@ pub trait ConstrainedProblem: BasicProblem {
         }
         true
     }
-    /// Constraint Jacobian indices. These are the row and column indices of the
+    /// Constraint Jacobian indices.
+    ///
+    /// These are the row and column indices of the
     /// non-zeros in the sparse representation of the matrix.
     /// This function is internally called by Ipopt callback `eval_jac_g`.
     fn constraint_jacobian_indices(&self, rows: &mut [Index], cols: &mut [Index]) -> bool;
-    /// Constraint Jacobian values. Each value must correspond to the `row` and
+    /// Constraint Jacobian values.
+    ///
+    /// Each value must correspond to the `row` and
     /// `column` as specified in `constraint_jacobian_indices`.
     /// This function is internally called by Ipopt callback `eval_jac_g`.
     fn constraint_jacobian_values(&self, x: &[Number], vals: &mut [Number]) -> bool;
-    /// Number of non-zeros in the Hessian matrix. This includes the constraint hessian.
+    /// Number of non-zeros in the Hessian matrix.
+    ///
+    /// This includes the constraint Hessian.
     fn num_hessian_non_zeros(&self) -> usize;
-    /// Hessian indices. These are the row and column indices of the non-zeros
+    /// Hessian indices.
+    ///
+    /// These are the row and column indices of the non-zeros
     /// in the sparse representation of the matrix.
     /// This should be a symmetric matrix, fill the lower left triangular half only.
     /// Ensure that you provide coordinates for non-zeros of the
-    /// objective and constraint hessians.
+    /// objective and constraint Hessians.
     /// This function is internally called by Ipopt callback `eval_h`.
     fn hessian_indices(&self, rows: &mut [Index], cols: &mut [Index]) -> bool;
-    /// Hessian values. Each value must correspond to the `row` and `column` as
+    /// Hessian values.
+    ///
+    /// Each value must correspond to the `row` and `column` as
     /// specified in `hessian_indices`.
-    /// Write the objective hessian values multiplied by `obj_factor` and constraint
-    /// hessian values multipled by the corresponding values in `lambda` (the Lagrange
+    /// Write the objective Hessian values multiplied by `obj_factor` and constraint
+    /// Hessian values multipled by the corresponding values in `lambda` (the Lagrange
     /// multiplier).
     /// This function is internally called by Ipopt callback `eval_h`.
     fn hessian_values(
@@ -298,6 +328,7 @@ pub trait ConstrainedProblem: BasicProblem {
     ) -> bool;
 
     /// Provide custom constraint function scaling.
+    ///
     /// This method is called if the Ipopt option, `nlp_scaling_method`, is set to `user-scaling`.
     /// Return `true` if scaling is provided and `false` otherwise: if `false` is returned, Ipopt
     /// will not scale the constraint function.
@@ -412,41 +443,56 @@ pub enum AlgorithmMode {
 pub struct IntermediateCallbackData {
     /// Algorithm mode indicates which mode the algorithm is currently in.
     pub alg_mod: AlgorithmMode,
-    /// The current iteration count. This includes regular iterations and iterations during the
-    /// restoration phase.
+    /// The current iteration count.
+    ///
+    /// This includes regular iterations and iterations during the restoration phase.
     pub iter_count: Index,
-    /// The unscaled objective value at the current point. During the restoration phase, this value
-    /// remains the unscaled objective value for the original problem.
+    /// The unscaled objective value at the current point.
+    ///
+    /// During the restoration phase, this value remains the unscaled objective value for the
+    /// original problem.
     pub obj_value: Number,
-    /// The unscaled constraint violation at the current point. This quantity is the infinity-norm
-    /// (max) of the (unscaled) constraints. During the restoration phase, this value remains
-    /// the constraint violation of the original problem at the current point. The option
-    /// inf_pr_output can be used to switch to the printing of a different quantity.
+    /// The unscaled constraint violation at the current point.
+    ///
+    /// This quantity is the infinity-norm (max) of the (unscaled) constraints. During the
+    /// restoration phase, this value remains the constraint violation of the original problem at
+    /// the current point. The option inf_pr_output can be used to switch to the printing of a
+    /// different quantity.
     pub inf_pr: Number,
-    /// The scaled dual infeasibility at the current point. This quantity measures the infinity-norm
-    /// (max) of the internal dual infeasibility, Eq. (4a) in the [implementation
-    /// paper](https://www.coin-or.org/Ipopt/documentation/node64.html#WaecBieg06:mp),
-    /// including inequality constraints reformulated using slack variables and problem scaling.
-    /// During the restoration phase, this is the value of the dual infeasibility for the
-    /// restoration phase problem.
+    /// The scaled dual infeasibility at the current point.
+    ///
+    /// This quantity measures the infinity-norm (max) of the internal dual infeasibility, Eq. (4a)
+    /// in the [implementation
+    /// paper](https://www.coin-or.org/Ipopt/documentation/node64.html#WaecBieg06:mp), including
+    /// inequality constraints reformulated using slack variables and problem scaling.  During the
+    /// restoration phase, this is the value of the dual infeasibility for the restoration phase
+    /// problem.
     pub inf_du: Number,
     /// The value of the barrier parameter $ \mu$.
     pub mu: Number,
     /// The infinity norm (max) of the primal step (for the original variables $ x$ and the
-    /// internal slack variables $ s$). During the restoration phase, this value includes the
+    /// internal slack variables $ s$).
+    ///
+    /// During the restoration phase, this value includes the
     /// values of additional variables, $ p$ and $ n$ (see Eq. (30) in [the implementation
     /// paper](https://www.coin-or.org/Ipopt/documentation/node64.html#WaecBieg06:mp))
     pub d_norm: Number,
     /// The value of the regularization term for the Hessian of the Lagrangian in
-    /// the augmented system ($ \delta_w$ in Eq. (26) and Section 3.1 in [the implementation
-    /// paper](https://www.coin-or.org/Ipopt/documentation/node64.html#WaecBieg06:mp)). A zero
-    /// value indicates that no regularization was done.
+    /// the augmented system
+    ///
+    /// This is $ \delta_w$ in Eq. (26) and Section 3.1 in [the implementation
+    /// paper](https://www.coin-or.org/Ipopt/documentation/node64.html#WaecBieg06:mp).
+    /// A zero value indicates that no regularization was done.
     pub regularization_size: Number,
-    /// The stepsize for the dual variables ( $ \alpha^z_k$ in Eq. (14c) in [the implementation
-    /// paper](https://www.coin-or.org/Ipopt/documentation/node64.html#WaecBieg06:mp)).
+    /// The stepsize for the dual variables.
+    ///
+    /// This is $ \alpha^z_k$ in Eq. (14c) in [the implementation
+    /// paper](https://www.coin-or.org/Ipopt/documentation/node64.html#WaecBieg06:mp).
     pub alpha_du: Number,
-    /// The stepsize for the primal variables ($ \alpha_k$ in Eq. (14a) in [the implementation
-    /// paper](https://www.coin-or.org/Ipopt/documentation/node64.html#WaecBieg06:mp)).
+    /// The stepsize for the primal variables.
+    ///
+    /// This is $ \alpha_k$ in Eq. (14a) in [the implementation
+    /// paper](https://www.coin-or.org/Ipopt/documentation/node64.html#WaecBieg06:mp).
     pub alpha_pr: Number,
     /// The number of backtracking line search steps (does not include second-order correction steps).
     pub ls_trials: Index,
@@ -466,14 +512,18 @@ pub struct SolveResult<'a, P: 'a> {
 }
 
 /// Type defining the callback function for giving intermediate execution control to
-/// the user. If set, it is called once per iteration, providing the user with some
+/// the user.
+///
+/// If set, it is called once per iteration, providing the user with some
 /// information on the state of the optimization. This can be used to print some user-
 /// defined output. It also gives the user a way to terminate the optimization
 /// prematurely. If this method returns false, Ipopt will terminate the optimization.
 pub type IntermediateCallback<P> = fn(&mut P, IntermediateCallbackData) -> bool;
 
-/// Ipopt non-linear optimization problem solver. This structure is used to store data
-/// needed to solve these problems using first and second order methods.
+/// Ipopt non-linear optimization problem solver.
+///
+/// This structure is used to store data needed to solve these problems using first and second
+/// order methods.
 pub struct Ipopt<P: BasicProblem> {
     /// Internal (opaque) Ipopt problem representation.
     nlp_internal: ffi::CNLP_ProblemPtr,
@@ -506,8 +556,10 @@ impl<P: BasicProblem + Debug> Debug for Ipopt<P> {
 unsafe impl<P: BasicProblem> Send for Ipopt<P> {}
 
 impl<P: BasicProblem> Ipopt<P> {
-    /// Common implementation for constructing an Ipopt struct. This involves some unsafe code that
-    /// should be isolated for easier maintenance and debugging.
+    /// Common implementation for constructing an Ipopt struct.
+    ///
+    /// This involves some unsafe code that should be isolated for easier maintenance and
+    /// debugging.
     fn new_impl(
         nlp_internal: ffi::CNLP_ProblemPtr,
         nlp: P,
@@ -698,8 +750,9 @@ impl<P: BasicProblem> Ipopt<P> {
      * Ipopt C API
      */
 
-    /// Specify initial guess for variables and bounds multipliers. No constraints on basic
-    /// problems.
+    /// Specify initial guess for variables and bounds multipliers.
+    ///
+    /// There are no constraints on basic problems.
     unsafe extern "C" fn basic_init(
         n: Index,
         init_x: Bool,
@@ -735,8 +788,9 @@ impl<P: BasicProblem> Ipopt<P> {
         true as Bool
     }
 
-    /// Specify the number of elements needed to be allocated for the variables. No Hessian, and no
-    /// constraints on basic problems.
+    /// Specify the number of elements needed to be allocated for the variables.
+    ///
+    /// There are no Hessian, and no constraints on basic problems.
     unsafe extern "C" fn basic_sizes(
         n: *mut Index,
         m: *mut Index,
@@ -757,7 +811,9 @@ impl<P: BasicProblem> Ipopt<P> {
         true as Bool
     }
 
-    /// Specify lower and upper bounds for variables. No constraints on basic problems.
+    /// Specify lower and upper bounds for variables.
+    ///
+    /// There are no constraints on basic problems.
     unsafe extern "C" fn variable_only_bounds(
         n: Index,
         x_l: *mut Number,
@@ -851,9 +907,10 @@ impl<P: BasicProblem> Ipopt<P> {
         false as Bool
     }
 
-    /// Specify custom scaling parameters. This function is called by Ipopt when
-    /// `nlp_scaling_method` is set to `user-scaling`.
-    /// Basic problems have no constraint scaling.
+    /// Specify custom scaling parameters.
+    ///
+    /// This function is called by Ipopt when `nlp_scaling_method` is set to `user-scaling`.  Basic
+    /// problems have no constraint scaling.
     unsafe extern "C" fn basic_scaling(
         obj_scaling: *mut Number,
         use_x_scaling: *mut Bool,
@@ -954,8 +1011,9 @@ impl<P: NewtonProblem> Ipopt<P> {
      * Ipopt C API
      */
 
-    /// Specify the number of elements needed to be allocated for the variables. No Hessian, and no
-    /// constraints on basic problems.
+    /// Specify the number of elements needed to be allocated for the variables.
+    ///
+    /// There are no Hessian, and no constraints on Newton problems.
     unsafe extern "C" fn newton_sizes(
         n: *mut Index,
         m: *mut Index,
@@ -969,7 +1027,7 @@ impl<P: NewtonProblem> Ipopt<P> {
         true as Bool
     }
 
-    /// Evaluate the hessian matrix.
+    /// Evaluate the Hessian matrix.
     unsafe extern "C" fn eval_h(
         n: Index,
         x: *const Number,
@@ -1189,8 +1247,9 @@ impl<P: ConstrainedProblem> Ipopt<P> {
         }
     }
 
-    /// Evaluate the hessian matrix. Compared to `eval_h` from `NewtonProblem`,
-    /// this version includes the constraint hessian.
+    /// Evaluate the Hessian matrix.
+    ///
+    /// Compared to `eval_h` from `NewtonProblem`, this version includes the constraint Hessians.
     unsafe extern "C" fn eval_full_h(
         n: Index,
         x: *const Number,
@@ -1223,8 +1282,9 @@ impl<P: ConstrainedProblem> Ipopt<P> {
         }
     }
 
-    /// Specify custom scaling parameters. This function is called by Ipopt when
-    /// `nlp_scaling_method` is set to `user-scaling`.
+    /// Specify custom scaling parameters.
+    ///
+    /// This function is called by Ipopt when `nlp_scaling_method` is set to `user-scaling`.
     unsafe extern "C" fn scaling(
         obj_scaling: *mut Number,
         use_x_scaling: *mut Bool,
@@ -1614,8 +1674,10 @@ impl From<CreateProblemStatus> for CreateError {
 /// Internal program create return status.
 #[derive(Copy, Clone, Debug, PartialEq)]
 enum CreateProblemStatus {
-    /// Program creation was successful. This variant should never be returned, instead a
-    /// successfully built instance is returned in a `Result` struct.
+    /// Program creation was successful.
+    ///
+    /// This variant should never be returned, instead a successfully built instance is returned in
+    /// a `Result` struct.
     Success,
     /// The initial guess callback is missing.
     MissingInitialGuess,
