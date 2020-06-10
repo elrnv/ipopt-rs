@@ -632,7 +632,7 @@ impl<P: BasicProblem> Ipopt<P> {
     where
         O: Into<IpoptOption<'a>>,
     {
-        (unsafe {
+        let result = unsafe {
             // Convert the input name string to a `char *` C type
             let name_cstr = CString::new(name).unwrap();
 
@@ -650,7 +650,8 @@ impl<P: BasicProblem> Ipopt<P> {
                     ffi::cnlp_add_int_option(nlp, name_cstr.as_ptr(), opt as Int)
                 }
             }
-        } != 0) // converts Ipopt Bool to Rust bool
+        };
+        result != 0  // converts Ipopt Bool to Rust bool
     }
 
     /// Set an Ipopt option.
