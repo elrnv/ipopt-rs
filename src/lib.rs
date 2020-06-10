@@ -651,7 +651,7 @@ impl<P: BasicProblem> Ipopt<P> {
                 }
             }
         };
-        result != 0  // converts Ipopt Bool to Rust bool
+        result != 0 // converts Ipopt Bool to Rust bool
     }
 
     /// Set an Ipopt option.

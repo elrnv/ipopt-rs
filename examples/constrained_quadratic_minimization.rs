@@ -70,9 +70,10 @@ impl<C, J, H> BasicProblem for NLP<C, J, H> {
 }
 
 impl<C, J, H> ConstrainedProblem for NLP<C, J, H>
-where C: Fn(f64, f64) -> f64,
-      J: Fn(f64, f64) -> [f64; 2],
-      H: Fn(f64, f64) -> [f64; 3], // Lower triangular [H00, H11, H10]
+where
+    C: Fn(f64, f64) -> f64,
+    J: Fn(f64, f64) -> [f64; 2],
+    H: Fn(f64, f64) -> [f64; 3], // Lower triangular [H00, H11, H10]
 {
     fn num_constraints(&self) -> usize {
         1
@@ -131,7 +132,13 @@ where C: Fn(f64, f64) -> f64,
         jcol[5] = 0;
         true
     }
-    fn hessian_values(&self, x: &[Number], obj_factor: Number, lambda: &[Number], vals: &mut [Number]) -> bool {
+    fn hessian_values(
+        &self,
+        x: &[Number],
+        obj_factor: Number,
+        lambda: &[Number],
+        vals: &mut [Number],
+    ) -> bool {
         let obj_hess = quadratic_hessian(x[0], x[1]);
         let constraint_hess = (self.constraint_hess)(x[0], x[1]);
         vals[0] = obj_hess[0] * obj_factor;
@@ -149,7 +156,7 @@ where C: Fn(f64, f64) -> f64,
 ///
 /// This function has a cusp at `x = 0`, where it is not differentiable for any `y`.
 fn abs_sdf(x: f64, y: f64) -> f64 {
-    (y-x).min(x+y)/2.0_f64.sqrt()
+    (y - x).min(x + y) / 2.0_f64.sqrt()
 }
 
 /// Jacobian of the `abs_sdf` function.
@@ -157,9 +164,9 @@ fn abs_sdf_jacobian(x: f64, _y: f64) -> [f64; 2] {
     // Disambiguate the jacobian at x=0 to coincide with the jacobian in x > 0.
     let sqrt2 = 2.0_f64.sqrt();
     if x > 0.0 {
-        [-1.0/sqrt2, 1.0/sqrt2]
+        [-1.0 / sqrt2, 1.0 / sqrt2]
     } else {
-        [1.0/sqrt2, 1.0/sqrt2]
+        [1.0 / sqrt2, 1.0 / sqrt2]
     }
 }
 
@@ -167,10 +174,10 @@ fn abs_sdf_jacobian(x: f64, _y: f64) -> [f64; 2] {
 
 /// A smoothed version of the absolute value function field `abs_sdf`.
 fn smoothed_abs_sdf(x: f64, y: f64, eps: f64) -> f64 {
-    if -x.abs() + 2.0*eps > y {
+    if -x.abs() + 2.0 * eps > y {
         // Near the cusp we use a circle arc as an approximation.
         let y_minus_2_eps = y - 2.0 * eps;
-        eps*2.0_f64.sqrt() - (x*x + y_minus_2_eps * y_minus_2_eps).sqrt()
+        eps * 2.0_f64.sqrt() - (x * x + y_minus_2_eps * y_minus_2_eps).sqrt()
     } else {
         abs_sdf(x, y)
     }
@@ -178,9 +185,9 @@ fn smoothed_abs_sdf(x: f64, y: f64, eps: f64) -> f64 {
 
 /// Jacobian of the `smoothed_abs_sdf` function.
 fn smoothed_abs_sdf_jacobian(x: f64, y: f64, eps: f64) -> [f64; 2] {
-    if -x.abs() + 2.0*eps > y {
+    if -x.abs() + 2.0 * eps > y {
         let y_minus_2_eps = y - 2.0 * eps;
-        let factor = -1.0/(x*x + y_minus_2_eps * y_minus_2_eps).sqrt();
+        let factor = -1.0 / (x * x + y_minus_2_eps * y_minus_2_eps).sqrt();
         [factor * x, factor * y_minus_2_eps]
     } else {
         abs_sdf_jacobian(x, y)
@@ -191,12 +198,16 @@ fn smoothed_abs_sdf_jacobian(x: f64, y: f64, eps: f64) -> [f64; 2] {
 ///
 /// The returned array contains the lower triangular entries [H00, H11, H10].
 fn smoothed_abs_sdf_hessian(x: f64, y: f64, eps: f64) -> [f64; 3] {
-    if -x.abs() + 2.0*eps > y {
+    if -x.abs() + 2.0 * eps > y {
         let y_minus_2_eps = y - 2.0 * eps;
-        let f = x*x + y_minus_2_eps * y_minus_2_eps;
-        let factor1 = -1.0/f.sqrt();
-        let factor2 = 1.0/(f*f.sqrt());
-        [factor1 + factor2 * x * x, factor1 + factor2 * y_minus_2_eps * y_minus_2_eps, factor2 * y_minus_2_eps * x]
+        let f = x * x + y_minus_2_eps * y_minus_2_eps;
+        let factor1 = -1.0 / f.sqrt();
+        let factor2 = 1.0 / (f * f.sqrt());
+        [
+            factor1 + factor2 * x * x,
+            factor1 + factor2 * y_minus_2_eps * y_minus_2_eps,
+            factor2 * y_minus_2_eps * x,
+        ]
     } else {
         [0.0; 3]
     }
@@ -218,7 +229,7 @@ fn quadratic_grad(x: f64, y: f64) -> [f64; 2] {
 ///
 /// The returned array contains the lower triangular entries [H00, H11, H10].
 fn quadratic_hessian(_x: f64, _y: f64) -> [f64; 3] {
-    [ 0.5, 0.5, 0.0 ]
+    [0.5, 0.5, 0.0]
 }
 
 fn main() {
@@ -239,13 +250,15 @@ fn main() {
     let max_iter = 1000;
     ipopt.set_option("max_iter", max_iter as i32);
     let SolveResult {
-        solver_data: SolverDataMut {
-            problem,
-            solution: Solution {
-                primal_variables: x,
-                ..
+        solver_data:
+            SolverDataMut {
+                problem,
+                solution:
+                    Solution {
+                        primal_variables: x,
+                        ..
+                    },
             },
-        },
         status,
         ..
     } = ipopt.solve();
@@ -254,7 +267,7 @@ fn main() {
     assert_eq!(status, SolveStatus::MaximumIterationsExceeded);
     eprintln!("Solve did not converge after {} steps.", max_iter);
     eprintln!("The final result was x: {:?}", x);
-    
+
     // We could replace the single absolute value constraint with two linear constraints to fix
     // convergence.  However this is not always desirable or possible with more complex functions.
     // So in this example, to improve convergence, we will smooth the cusp slightly, preserving the
@@ -275,16 +288,21 @@ fn main() {
     ipopt.set_option("print_level", 5);
 
     let SolveResult {
-        solver_data: SolverDataMut {
-            problem,
-            solution: Solution {
-                primal_variables: x,
-                ..
+        solver_data:
+            SolverDataMut {
+                problem,
+                solution:
+                    Solution {
+                        primal_variables: x,
+                        ..
+                    },
             },
-        },
         ..
     } = ipopt.solve();
 
     assert!(problem.iterations < 10);
-    eprintln!("Solve converged after less than 10 iterations at x: {:?}", x);
+    eprintln!(
+        "Solve converged after less than 10 iterations at x: {:?}",
+        x
+    );
 }
