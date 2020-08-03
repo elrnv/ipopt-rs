@@ -377,7 +377,7 @@ impl<'a> From<i32> for IpoptOption<'a> {
 
 /// The solution of the optimization problem including variables, bound multipliers and Lagrange
 /// multipliers. This struct stores immutable slices to the solution data.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Solution<'a> {
     /// This is the solution after the solve.
     pub primal_variables: &'a [Number],
