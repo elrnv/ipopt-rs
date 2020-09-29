@@ -18,7 +18,7 @@ keywords = ["non-linear", "optimization", "constrained", "ipopt", "unsafe"]
 approx = "0.3"
 
 [build-dependencies]
-bindgen = "0.51"
+bindgen = "0.55"
 curl = "0.4"
 tar = "0.4"
 flate2 = "1.0"
