@@ -457,10 +457,6 @@ mod tests {
         _ls_trials: CNLP_Index,
         _user_data: CNLP_UserDataPtr,
     ) -> CNLP_Bool {
-        if inf_pr < 1e-4 {
-            false as CNLP_Bool
-        } else {
-            true as CNLP_Bool
-        }
+        (inf_pr >= 1e-4) as CNLP_Bool
     }
 }
