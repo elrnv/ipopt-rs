@@ -698,7 +698,36 @@ fn build_with_mkl(install_dir: &Path, debug: bool) -> Result<LinkInfo, Error> {
         }
     };
 
+    // Look for intel TBB and link to its libraries if found.
+    let tbb_root = env::var("TBBROOT");
+    debug!("tbb_root = {:?}", &tbb_root);
+    let tbb_libs_path = if let Ok(tbb_root) = tbb_root {
+        let libs_path = PathBuf::from(tbb_root).join("lib");
+        let intel64_libs_path = libs_path.clone().join("intel64");
+        Some(if intel64_libs_path.exists() {
+            intel64_libs_path
+        } else {
+            libs_path
+        })
+    } else {
+        // Check if tbb exists alongside the mkl installation. Otherwise use system tbb.
+        let get_opt_path = || {
+            let opt_path = mkl_libs_path.parent()?.parent()?.join("tbb").join("lib");
+            let opt_path_intel64 = opt_path.clone().join("intel64");
+            if opt_path_intel64.exists() {
+                // directory exists
+                Some(opt_path_intel64)
+            } else if opt_path.exists() {
+                Some(opt_path)
+            } else {
+                None
+            }
+        };
+        get_opt_path()
+    };
+
     debug!("mkl_libs_path = {:?}", &mkl_libs_path);
+    debug!("tbb_libs_path = {:?}", &tbb_libs_path);
 
     let mut link_libs = vec![(LibKind::Static, "ipopt".to_string())];
 
@@ -706,10 +735,15 @@ fn build_with_mkl(install_dir: &Path, debug: bool) -> Result<LinkInfo, Error> {
         if !mkl_libs_path.exists() {
             return Err(Error::MKLInstallNotFound);
         } else {
+            let tbb = tbb_libs_path
+                .map(|libs_path| format!("-L{}", libs_path.display()))
+                .unwrap_or_else(String::new);
+
             let lib_prefix = format!("{}/lib", mkl_libs_path.display());
             let aux_libs = format!(
-                "-L{mkl} -ltbb -lpthread -lm -ldl",
-                mkl = mkl_libs_path.display()
+                "-L{mkl} {tbb} -ltbb -lpthread -lm -ldl",
+                mkl = mkl_libs_path.display(),
+                tbb = tbb,
             );
 
             let mut mkl_libs_str = String::new();
@@ -720,7 +754,7 @@ fn build_with_mkl(install_dir: &Path, debug: bool) -> Result<LinkInfo, Error> {
             }
             if cfg!(target_os = "macos") {
                 format!(
-                    "--with-blas={mkl} {aux} -lc++",
+                    "--with-pardiso={mkl} {aux} -lc++",
                     mkl = mkl_libs_str,
                     aux = aux_libs
                 )
@@ -766,22 +800,29 @@ fn build_with_mkl(install_dir: &Path, debug: bool) -> Result<LinkInfo, Error> {
 
     if cfg!(unix) {
         // Strip extraneous modules from the archive. This is an Ipopt artifact.
+        let libipopt_a = format!("{}/lib/libipopt.a", install_dir.display());
         run("ar", |cmd| {
             cmd.arg("-d")
-                .arg(format!("{}/lib/libipopt.a", install_dir.display()))
+                .arg(libipopt_a)
                 .arg("libmkl_intel_lp64.a")
                 .arg("libmkl_tbb_thread.a")
                 .arg("libmkl_core.a")
                 .arg("libmkl_intel_lp64.a")
                 .arg("libmkl_tbb_thread.a")
                 .arg("libmkl_core.a")
-                .arg("libmkl_intel_lp64.a")
-                .arg("libmkl_tbb_thread.a")
-                .arg("libmkl_core.a")
-                .arg("lt1-libmkl_intel_lp64.a")
-                .arg("lt2-libmkl_tbb_thread.a")
-                .arg("lt3-libmkl_core.a")
         });
+        if !cfg!(target_os = "macos") {
+            run("ar", |cmd| {
+                cmd.arg("-d")
+                    .arg(libipopt_a)
+                    .arg("libmkl_intel_lp64.a")
+                    .arg("libmkl_tbb_thread.a")
+                    .arg("libmkl_core.a")
+                    .arg("lt1-libmkl_intel_lp64.a")
+                    .arg("lt2-libmkl_tbb_thread.a")
+                    .arg("lt3-libmkl_core.a")
+            });
+        }
     }
 
     for mkl_lib in mkl_libs.iter() {
