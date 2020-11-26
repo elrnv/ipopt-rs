@@ -803,7 +803,7 @@ fn build_with_mkl(install_dir: &Path, debug: bool) -> Result<LinkInfo, Error> {
         let libipopt_a = format!("{}/lib/libipopt.a", install_dir.display());
         run("ar", |cmd| {
             cmd.arg("-d")
-                .arg(libipopt_a)
+                .arg(&libipopt_a)
                 .arg("libmkl_intel_lp64.a")
                 .arg("libmkl_tbb_thread.a")
                 .arg("libmkl_core.a")
@@ -814,7 +814,7 @@ fn build_with_mkl(install_dir: &Path, debug: bool) -> Result<LinkInfo, Error> {
         if !cfg!(target_os = "macos") {
             run("ar", |cmd| {
                 cmd.arg("-d")
-                    .arg(libipopt_a)
+                    .arg(&libipopt_a)
                     .arg("libmkl_intel_lp64.a")
                     .arg("libmkl_tbb_thread.a")
                     .arg("libmkl_core.a")
