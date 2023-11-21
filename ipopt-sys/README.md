@@ -71,7 +71,12 @@ if you installed `gfortran` directly.
 
 Ultimately, no matter which method you choose, `libgfortran.dylib` must be available through the linker search paths.
 
+### Troubleshooting
 
+* Error compiling `Mumps`:
+  * Set the environment variable `export ADD_FFLAGS="-fallow-argument-mismatch"`
+  * See https://github.com/coin-or-tools/ThirdParty-Mumps/issues/4 for more discussion, it affects GCC 10 and higher
+  
 # License
 
 This repository is licensed under either of 
