@@ -75,7 +75,7 @@ impl BasicProblem for NLP {
         x.copy_from_slice(&self.x_start.borrow());
         true
     }
-    fn objective(&self, x: &[Number], obj: &mut Number) -> bool {
+    fn objective(&mut self, x: &[Number], _: bool, obj: &mut Number) -> bool {
         *obj = 0.0;
         for &val in x.iter() {
             *obj += (val - 1.0) * (val - 1.0);
@@ -83,7 +83,7 @@ impl BasicProblem for NLP {
         *obj *= 0.5;
         true
     }
-    fn objective_grad(&self, x: &[Number], grad_f: &mut [Number]) -> bool {
+    fn objective_grad(&mut self, x: &[Number], _: bool, grad_f: &mut [Number]) -> bool {
         for (g, &val) in grad_f.iter_mut().zip(x.iter()) {
             *g = val - 1.0;
         }

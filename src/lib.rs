@@ -183,12 +183,12 @@ pub trait BasicProblem {
     /// Objective function. This is the function being minimized.
     ///
     /// This function is internally called by Ipopt callback `eval_f`.
-    fn objective(&self, x: &[Number], obj: &mut Number) -> bool;
+    fn objective(&mut self, x: &[Number], new_x: bool, obj: &mut Number) -> bool;
 
     /// The gradient of the objective function speficies the search direction to Ipopt.
     ///
     /// This function is internally called by Ipopt callback `eval_grad_f`.
-    fn objective_grad(&self, x: &[Number], grad_f: &mut [Number]) -> bool;
+    fn objective_grad(&mut self, x: &[Number], new_x: bool, grad_f: &mut [Number]) -> bool;
 
     /// Provide custom variable scaling.
     ///
@@ -266,7 +266,7 @@ pub trait ConstrainedProblem: BasicProblem {
     /// This gives the value of each constraint.
     /// The output slice `g` is guaranteed to be the same size as `num_constraints`.
     /// This function is internally called by Ipopt callback `eval_g`.
-    fn constraint(&self, x: &[Number], g: &mut [Number]) -> bool;
+    fn constraint(&mut self, x: &[Number], new_x: bool, g: &mut [Number]) -> bool;
     /// Specify lower and upper bounds, `g_l` and `g_u` respectively, on the constraint function.
     ///
     /// Both slices will have the same size as what `num_constraints` returns.
@@ -297,7 +297,12 @@ pub trait ConstrainedProblem: BasicProblem {
     /// Each value must correspond to the `row` and
     /// `column` as specified in `constraint_jacobian_indices`.
     /// This function is internally called by Ipopt callback `eval_jac_g`.
-    fn constraint_jacobian_values(&self, x: &[Number], vals: &mut [Number]) -> bool;
+    fn constraint_jacobian_values(
+        &mut self,
+        x: &[Number],
+        new_x: bool,
+        vals: &mut [Number],
+    ) -> bool;
     /// Number of non-zeros in the Hessian matrix.
     ///
     /// This includes the constraint Hessian.
@@ -320,8 +325,9 @@ pub trait ConstrainedProblem: BasicProblem {
     /// multiplier).
     /// This function is internally called by Ipopt callback `eval_h`.
     fn hessian_values(
-        &self,
+        &mut self,
         x: &[Number],
+        new_x: bool,
         obj_factor: Number,
         lambda: &[Number],
         vals: &mut [Number],
@@ -836,25 +842,30 @@ impl<P: BasicProblem> Ipopt<P> {
     unsafe extern "C" fn eval_f(
         n: Index,
         x: *const Number,
-        _new_x: Bool,
+        new_x: Bool,
         obj_value: *mut Number,
         user_data: ffi::CNLP_UserDataPtr,
     ) -> Bool {
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
-        nlp.objective(slice::from_raw_parts(x, n as usize), &mut *obj_value) as Bool
+        nlp.objective(
+            slice::from_raw_parts(x, n as usize),
+            new_x != 0,
+            &mut *obj_value,
+        ) as Bool
     }
 
     /// Evaluate the objective gradient.
     unsafe extern "C" fn eval_grad_f(
         n: Index,
         x: *const Number,
-        _new_x: Bool,
+        new_x: Bool,
         grad_f: *mut Number,
         user_data: ffi::CNLP_UserDataPtr,
     ) -> Bool {
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
         nlp.objective_grad(
             slice::from_raw_parts(x, n as usize),
+            new_x != 0,
             slice::from_raw_parts_mut(grad_f, n as usize),
         ) as Bool
     }
@@ -1208,7 +1219,7 @@ impl<P: ConstrainedProblem> Ipopt<P> {
     unsafe extern "C" fn eval_g(
         n: Index,
         x: *const Number,
-        _new_x: Bool,
+        new_x: Bool,
         m: Index,
         g: *mut Number,
         user_data: ffi::CNLP_UserDataPtr,
@@ -1216,6 +1227,7 @@ impl<P: ConstrainedProblem> Ipopt<P> {
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
         nlp.constraint(
             slice::from_raw_parts(x, n as usize),
+            new_x != 0,
             slice::from_raw_parts_mut(g, m as usize),
         ) as Bool
     }
@@ -1224,7 +1236,7 @@ impl<P: ConstrainedProblem> Ipopt<P> {
     unsafe extern "C" fn eval_jac_g(
         n: Index,
         x: *const Number,
-        _new_x: Bool,
+        new_x: Bool,
         _m: Index,
         nele_jac: Index,
         irow: *mut Index,
@@ -1243,6 +1255,7 @@ impl<P: ConstrainedProblem> Ipopt<P> {
             /* return the values of the Jacobian of the constraints */
             nlp.constraint_jacobian_values(
                 slice::from_raw_parts(x, n as usize),
+                new_x != 0,
                 slice::from_raw_parts_mut(values, nele_jac as usize),
             ) as Bool
         }
@@ -1254,7 +1267,7 @@ impl<P: ConstrainedProblem> Ipopt<P> {
     unsafe extern "C" fn eval_full_h(
         n: Index,
         x: *const Number,
-        _new_x: Bool,
+        new_x: Bool,
         obj_factor: Number,
         m: Index,
         lambda: *const Number,
@@ -1276,6 +1289,7 @@ impl<P: ConstrainedProblem> Ipopt<P> {
             /* return the values. */
             nlp.hessian_values(
                 slice::from_raw_parts(x, n as usize),
+                new_x != 0,
                 obj_factor,
                 slice::from_raw_parts(lambda, m as usize),
                 slice::from_raw_parts_mut(values, nele_hess as usize),
@@ -1740,10 +1754,10 @@ mod tests {
             x.copy_from_slice(&self.init_point);
             true
         }
-        fn objective(&self, _: &[Number], _: &mut Number) -> bool {
+        fn objective(&mut self, _: &[Number], _: bool, _: &mut Number) -> bool {
             true
         }
-        fn objective_grad(&self, _: &[Number], _: &mut [Number]) -> bool {
+        fn objective_grad(&mut self, _: &[Number], _: bool, _: &mut [Number]) -> bool {
             true
         }
     }
@@ -1798,10 +1812,10 @@ mod tests {
             x.copy_from_slice(&self.init_point.clone());
             true
         }
-        fn objective(&self, _: &[Number], _: &mut Number) -> bool {
+        fn objective(&mut self, _: &[Number], _: bool, _: &mut Number) -> bool {
             true
         }
-        fn objective_grad(&self, _: &[Number], _: &mut [Number]) -> bool {
+        fn objective_grad(&mut self, _: &[Number], _: bool, _: &mut [Number]) -> bool {
             true
         }
     }
@@ -1819,13 +1833,13 @@ mod tests {
             g_u.copy_from_slice(&self.constraint_upper);
             true
         }
-        fn constraint(&self, _: &[Number], _: &mut [Number]) -> bool {
+        fn constraint(&mut self, _: &[Number], _: bool, _: &mut [Number]) -> bool {
             true
         }
         fn constraint_jacobian_indices(&self, _: &mut [Index], _: &mut [Index]) -> bool {
             true
         }
-        fn constraint_jacobian_values(&self, _: &[Number], _: &mut [Number]) -> bool {
+        fn constraint_jacobian_values(&mut self, _: &[Number], _: bool, _: &mut [Number]) -> bool {
             true
         }
 
@@ -1836,7 +1850,14 @@ mod tests {
         fn hessian_indices(&self, _: &mut [Index], _: &mut [Index]) -> bool {
             true
         }
-        fn hessian_values(&self, _: &[Number], _: Number, _: &[Number], _: &mut [Number]) -> bool {
+        fn hessian_values(
+            &mut self,
+            _: &[Number],
+            _: bool,
+            _: Number,
+            _: &[Number],
+            _: &mut [Number],
+        ) -> bool {
             true
         }
     }
