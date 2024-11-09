@@ -57,11 +57,11 @@ impl<C, J, H> BasicProblem for NLP<C, J, H> {
         x[1] = 0.8;
         true
     }
-    fn objective(&mut self, x: &[Number], _: bool, obj: &mut Number) -> bool {
+    fn objective(&self, x: &[Number], _: bool, obj: &mut Number) -> bool {
         *obj = quadratic(x[0], x[1]);
         true
     }
-    fn objective_grad(&mut self, x: &[Number], _: bool, grad_f: &mut [Number]) -> bool {
+    fn objective_grad(&self, x: &[Number], _: bool, grad_f: &mut [Number]) -> bool {
         let grad = quadratic_grad(x[0], x[1]);
         grad_f[0] = grad[0];
         grad_f[1] = grad[1];
@@ -88,7 +88,7 @@ where
         g_u[0] = 1e20;
         true
     }
-    fn constraint(&mut self, x: &[Number], _: bool, g: &mut [Number]) -> bool {
+    fn constraint(&self, x: &[Number], _: bool, g: &mut [Number]) -> bool {
         g[0] = (self.constraint_f)(x[0], x[1]);
         true
     }
@@ -99,7 +99,7 @@ where
         jcol[1] = 1;
         true
     }
-    fn constraint_jacobian_values(&mut self, x: &[Number], _: bool, vals: &mut [Number]) -> bool {
+    fn constraint_jacobian_values(&self, x: &[Number], _: bool, vals: &mut [Number]) -> bool {
         let jac = (self.constraint_jac)(x[0], x[1]);
         vals[0] = jac[0];
         vals[1] = jac[1];
@@ -133,7 +133,7 @@ where
         true
     }
     fn hessian_values(
-        &mut self,
+        &self,
         x: &[Number],
         _: bool,
         obj_factor: Number,

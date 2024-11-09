@@ -183,12 +183,12 @@ pub trait BasicProblem {
     /// Objective function. This is the function being minimized.
     ///
     /// This function is internally called by Ipopt callback `eval_f`.
-    fn objective(&mut self, x: &[Number], new_x: bool, obj: &mut Number) -> bool;
+    fn objective(&self, x: &[Number], new_x: bool, obj: &mut Number) -> bool;
 
     /// The gradient of the objective function speficies the search direction to Ipopt.
     ///
     /// This function is internally called by Ipopt callback `eval_grad_f`.
-    fn objective_grad(&mut self, x: &[Number], new_x: bool, grad_f: &mut [Number]) -> bool;
+    fn objective_grad(&self, x: &[Number], new_x: bool, grad_f: &mut [Number]) -> bool;
 
     /// Provide custom variable scaling.
     ///
@@ -266,7 +266,7 @@ pub trait ConstrainedProblem: BasicProblem {
     /// This gives the value of each constraint.
     /// The output slice `g` is guaranteed to be the same size as `num_constraints`.
     /// This function is internally called by Ipopt callback `eval_g`.
-    fn constraint(&mut self, x: &[Number], new_x: bool, g: &mut [Number]) -> bool;
+    fn constraint(&self, x: &[Number], new_x: bool, g: &mut [Number]) -> bool;
     /// Specify lower and upper bounds, `g_l` and `g_u` respectively, on the constraint function.
     ///
     /// Both slices will have the same size as what `num_constraints` returns.
@@ -297,12 +297,7 @@ pub trait ConstrainedProblem: BasicProblem {
     /// Each value must correspond to the `row` and
     /// `column` as specified in `constraint_jacobian_indices`.
     /// This function is internally called by Ipopt callback `eval_jac_g`.
-    fn constraint_jacobian_values(
-        &mut self,
-        x: &[Number],
-        new_x: bool,
-        vals: &mut [Number],
-    ) -> bool;
+    fn constraint_jacobian_values(&self, x: &[Number], new_x: bool, vals: &mut [Number]) -> bool;
     /// Number of non-zeros in the Hessian matrix.
     ///
     /// This includes the constraint Hessian.
@@ -325,7 +320,7 @@ pub trait ConstrainedProblem: BasicProblem {
     /// multiplier).
     /// This function is internally called by Ipopt callback `eval_h`.
     fn hessian_values(
-        &mut self,
+        &self,
         x: &[Number],
         new_x: bool,
         obj_factor: Number,
@@ -1754,10 +1749,10 @@ mod tests {
             x.copy_from_slice(&self.init_point);
             true
         }
-        fn objective(&mut self, _: &[Number], _: bool, _: &mut Number) -> bool {
+        fn objective(&self, _: &[Number], _: bool, _: &mut Number) -> bool {
             true
         }
-        fn objective_grad(&mut self, _: &[Number], _: bool, _: &mut [Number]) -> bool {
+        fn objective_grad(&self, _: &[Number], _: bool, _: &mut [Number]) -> bool {
             true
         }
     }
@@ -1812,10 +1807,10 @@ mod tests {
             x.copy_from_slice(&self.init_point.clone());
             true
         }
-        fn objective(&mut self, _: &[Number], _: bool, _: &mut Number) -> bool {
+        fn objective(&self, _: &[Number], _: bool, _: &mut Number) -> bool {
             true
         }
-        fn objective_grad(&mut self, _: &[Number], _: bool, _: &mut [Number]) -> bool {
+        fn objective_grad(&self, _: &[Number], _: bool, _: &mut [Number]) -> bool {
             true
         }
     }
@@ -1833,13 +1828,13 @@ mod tests {
             g_u.copy_from_slice(&self.constraint_upper);
             true
         }
-        fn constraint(&mut self, _: &[Number], _: bool, _: &mut [Number]) -> bool {
+        fn constraint(&self, _: &[Number], _: bool, _: &mut [Number]) -> bool {
             true
         }
         fn constraint_jacobian_indices(&self, _: &mut [Index], _: &mut [Index]) -> bool {
             true
         }
-        fn constraint_jacobian_values(&mut self, _: &[Number], _: bool, _: &mut [Number]) -> bool {
+        fn constraint_jacobian_values(&self, _: &[Number], _: bool, _: &mut [Number]) -> bool {
             true
         }
 
@@ -1851,7 +1846,7 @@ mod tests {
             true
         }
         fn hessian_values(
-            &mut self,
+            &self,
             _: &[Number],
             _: bool,
             _: Number,

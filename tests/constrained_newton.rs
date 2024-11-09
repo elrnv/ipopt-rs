@@ -85,11 +85,11 @@ impl BasicProblem for NLP {
         }
         false
     }
-    fn objective(&mut self, x: &[Number], _: bool, obj: &mut Number) -> bool {
+    fn objective(&self, x: &[Number], _: bool, obj: &mut Number) -> bool {
         *obj = x[0] * x[3] * (x[0] + x[1] + x[2]) + x[2];
         true
     }
-    fn objective_grad(&mut self, x: &[Number], _: bool, grad_f: &mut [Number]) -> bool {
+    fn objective_grad(&self, x: &[Number], _: bool, grad_f: &mut [Number]) -> bool {
         grad_f[0] = x[0] * x[3] + x[3] * (x[0] + x[1] + x[2]);
         grad_f[1] = x[0] * x[3];
         grad_f[2] = x[0] * x[3] + 1.0;
@@ -124,7 +124,7 @@ impl ConstrainedProblem for NLP {
         g_u.swap_with_slice(vec![2.0e19, 40.0].as_mut_slice());
         true
     }
-    fn constraint(&mut self, x: &[Number], _: bool, g: &mut [Number]) -> bool {
+    fn constraint(&self, x: &[Number], _: bool, g: &mut [Number]) -> bool {
         g[0] = x[0] * x[1] * x[2] * x[3] + self.g_offset[0];
         g[1] = x[0] * x[0] + x[1] * x[1] + x[2] * x[2] + x[3] * x[3] + self.g_offset[1];
         true
@@ -148,7 +148,7 @@ impl ConstrainedProblem for NLP {
         jcol[7] = 3;
         true
     }
-    fn constraint_jacobian_values(&mut self, x: &[Number], _: bool, vals: &mut [Number]) -> bool {
+    fn constraint_jacobian_values(&self, x: &[Number], _: bool, vals: &mut [Number]) -> bool {
         vals[0] = x[1] * x[2] * x[3]; /* 0,0 */
         vals[1] = x[0] * x[2] * x[3]; /* 0,1 */
         vals[2] = x[0] * x[1] * x[3]; /* 0,2 */
@@ -177,7 +177,7 @@ impl ConstrainedProblem for NLP {
         true
     }
     fn hessian_values(
-        &mut self,
+        &self,
         x: &[Number],
         _: bool,
         obj_factor: Number,
