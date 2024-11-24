@@ -346,6 +346,7 @@ pub trait ConstrainedProblem: BasicProblem {
 
 /// Type of option you can specify to Ipopt.
 /// This is used internally for conversion.
+#[derive(Clone, Copy)]
 pub enum IpoptOption<'a> {
     /// Numeric option.
     Num(f64),
