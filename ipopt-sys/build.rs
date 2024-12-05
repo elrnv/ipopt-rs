@@ -183,7 +183,7 @@ fn main() {
         }
     }
 
-    panic!(msg);
+    panic!("{}", msg);
 }
 
 #[derive(Clone, Debug, PartialEq)]
