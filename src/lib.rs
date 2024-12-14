@@ -78,13 +78,13 @@
  *     }
  *
  *     // The objective to be minimized.
- *     fn objective(&self, x: &[Number], obj: &mut Number) -> bool {
+ *     fn objective(&self, x: &[Number], new_x: bool, obj: &mut Number) -> bool {
  *         *obj = (x[0] - 1.0)*(x[0] - 1.0) + (x[1] - 1.0)*(x[1] - 1.0);
  *         true
  *     }
  *
  *     // Objective gradient is used to find a new search direction to find the critical point.
- *     fn objective_grad(&self, x: &[Number], grad_f: &mut [Number]) -> bool {
+ *     fn objective_grad(&self, x: &[Number], new_x: bool, grad_f: &mut [Number]) -> bool {
  *         grad_f[0] = 2.0*(x[0] - 1.0);
  *         grad_f[1] = 2.0*(x[1] - 1.0);
  *         true
@@ -377,6 +377,14 @@ impl<'a> From<i32> for IpoptOption<'a> {
     }
 }
 
+fn reconstruct_dual_slice<'a>(g: *const Number, num_dual_vars: usize) -> &'a [Number] {
+    if num_dual_vars == 0 {
+        &[]
+    } else {
+        unsafe { slice::from_raw_parts(g, num_dual_vars) }
+    }
+}
+
 /// The solution of the optimization problem including variables, bound multipliers and Lagrange
 /// multipliers. This struct stores immutable slices to the solution data.
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -398,6 +406,8 @@ impl<'a> Solution<'a> {
         num_primal_vars: usize,
         num_dual_vars: usize,
     ) -> Solution<'a> {
+        dbg!(num_dual_vars);
+        dbg!(data.mult_g);
         Solution {
             primal_variables: unsafe { slice::from_raw_parts(data.x, num_primal_vars) },
             lower_bound_multipliers: unsafe {
@@ -406,7 +416,7 @@ impl<'a> Solution<'a> {
             upper_bound_multipliers: unsafe {
                 slice::from_raw_parts(data.mult_x_U, num_primal_vars)
             },
-            constraint_multipliers: unsafe { slice::from_raw_parts(data.mult_g, num_dual_vars) },
+            constraint_multipliers: reconstruct_dual_slice(data.mult_g, num_dual_vars),
         }
     }
 }
@@ -705,7 +715,7 @@ impl<P: BasicProblem> Ipopt<P> {
                 problem,
                 solution: Solution::from_raw(res.data, num_primal_variables, num_dual_variables),
             },
-            constraint_values: unsafe { slice::from_raw_parts(res.g, num_dual_variables) },
+            constraint_values: reconstruct_dual_slice(res.g, num_dual_variables),
             objective_value: res.obj_val,
             status: SolveStatus::new(res.status),
         }
