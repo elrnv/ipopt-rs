@@ -1,5 +1,6 @@
 
 /target/
 ipopt-sys/target/
+ipopt-sys/cnlp/build/
 **/*.rs.bk
 Cargo.lock
