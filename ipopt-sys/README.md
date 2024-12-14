@@ -77,11 +77,26 @@ Ultimately, no matter which method you choose, `libgfortran.dylib` must be avail
   * Set the environment variable `export ADD_FFLAGS="-fallow-argument-mismatch"`
   * See https://github.com/coin-or-tools/ThirdParty-Mumps/issues/4 for more discussion, it affects GCC 10 and higher
   
+
+* If you see an error message when trying to build `ipopt-sys` like the following:
+
+  ```verbatim
+  = note: ld.lld: error: undefined symbol: MKLMPI_Get_wrappers
+          >>> referenced by mkl_get_mpi_wrappers.c
+          >>>               mkl_get_mpi_wrappers_static.o:(mkl_serv_get_mpi_wrappers) in archive
+          >>>               <mkl_root>/lib/libmkl_core.a
+          clang: error: linker command failed with exit code 1 (use -v to see invocation)
+  ```
+
+  It is most likely that downstream builds will succeed if they don't use that symbol. To test if that
+is the case try to build `ipopt-rs` directly.
+
+
 # License
 
 This repository is licensed under either of 
 
-  * Apache License, Version 2.0 ([LICENSE-APACHE](../LICENSE-APACHE) or (http://www.apache.org/licenses/LICENSE-2.0)
+  * Apache License, Version 2.0 ([LICENSE-APACHE](../LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
   * MIT License ([LICENSE-MIT](../LICENSE-MIT) or https://opensource.org/licenses/MIT)
 
 at your option.
