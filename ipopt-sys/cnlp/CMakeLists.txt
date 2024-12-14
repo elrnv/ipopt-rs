@@ -28,3 +28,41 @@ target_include_directories( ${library_name} PRIVATE ${Ipopt_INCLUDE_DIR} )
 
 install( TARGETS ${library_name} DESTINATION lib )
 install( FILES ${CAPI_HEADERS} DESTINATION include )
+
+if(MAKE_AND_RUN_TEST)
+    set( Ipopt_LIBRARY_DIRS "NOTFOUND" CACHE STRING "Ipopt library paths")
+    find_path( Ipopt_LIBRARY_DIR libipopt.a PATHS ${Ipopt_LIBRARY_DIRS} DOC "Ipopt library directory")
+
+
+    # Add the test executable and its source files.
+    add_executable( hs071 
+        ${CAPI_HEADERS} 
+        tests/hs071_nlp.h
+        tests/hs071_nlp.c
+        tests/hs071_main.c
+    )
+
+    set( MKLROOT /home/egor )
+
+    target_link_directories( hs071 PRIVATE ${MKLROOT}/lib )
+
+    target_link_libraries( hs071 PRIVATE
+        ${library_name}
+        ${Ipopt_LIBRARY_DIR}/libipopt.a
+        ${MKLROOT}/lib/libmkl_intel_lp64.a
+        ${MKLROOT}/lib/libmkl_tbb_thread.a
+        ${MKLROOT}/lib/libmkl_core.a
+        ${MKLROOT}/lib/libmkl_intel_lp64.a
+        ${MKLROOT}/lib/libmkl_tbb_thread.a
+        ${MKLROOT}/lib/libmkl_core.a
+        ${MKLROOT}/lib/libmkl_intel_lp64.a
+        ${MKLROOT}/lib/libmkl_tbb_thread.a
+        ${MKLROOT}/lib/libmkl_core.a
+         tbb stdc++ pthread m dl
+        )
+
+    add_custom_command(TARGET hs071 POST_BUILD
+        COMMENT "Run hs071 test"
+        COMMAND "$<TARGET_FILE:hs071>"
+    )
+endif(MAKE_AND_RUN_TEST)
