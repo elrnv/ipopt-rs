@@ -956,52 +956,51 @@ fn build_with_default_blas(install_dir: &Path, debug: bool) -> Result<LinkInfo, 
     let mut search_paths = vec![install_dir.join("lib")];
     let mut include_paths = vec![install_dir.join("include")];
 
-    // Build prepackaged solvers.
-    let third_party = root_dir.join("ThirdParty");
-    let metis_dir = third_party.join("Metis");
-    let mumps_dir = third_party.join("Mumps");
-
-    download_and_unpack_thirdparty(
-        &third_party,
-        "Metis",
-        METIS_URL,
-        METIS_VERSION,
-        METIS_MD5,
-        METIS_SHA1,
-    )?;
-    download_and_unpack_thirdparty(
-        &third_party,
-        "Mumps",
-        MUMPS_URL,
-        MUMPS_VERSION,
-        MUMPS_MD5,
-        MUMPS_SHA1,
-    )?;
-
-    let set_wget_cmd = "s/wgetcmd=ftp/wgetcmd=\"curl -L -O\"/g";
-
-    env::set_current_dir(metis_dir).unwrap();
-    run("sed", |cmd| {
-        cmd.arg("-i~").arg(set_wget_cmd).arg("get.Metis")
-    });
-    run(
-        env::current_dir()?.join("get.Metis").to_str().unwrap(),
-        |cmd| cmd,
-    );
-
-    env::set_current_dir(mumps_dir).unwrap();
-    run("sed", |cmd| {
-        cmd.arg("-i~").arg(set_wget_cmd).arg("get.Mumps")
-    });
-    run(
-        env::current_dir()?.join("get.Mumps").to_str().unwrap(),
-        |cmd| cmd,
-    );
-
-    link_libs.push((LibKind::Static, "coinmumps".to_string()));
-    link_libs.push((LibKind::Static, "coinmetis".to_string()));
-
     if cfg!(target_os = "linux") {
+        // Build prepackaged solvers.
+        let third_party = root_dir.join("ThirdParty");
+        let metis_dir = third_party.join("Metis");
+        let mumps_dir = third_party.join("Mumps");
+
+        download_and_unpack_thirdparty(
+            &third_party,
+            "Metis",
+            METIS_URL,
+            METIS_VERSION,
+            METIS_MD5,
+            METIS_SHA1,
+        )?;
+        download_and_unpack_thirdparty(
+            &third_party,
+            "Mumps",
+            MUMPS_URL,
+            MUMPS_VERSION,
+            MUMPS_MD5,
+            MUMPS_SHA1,
+        )?;
+
+        let set_wget_cmd = "s/wgetcmd=ftp/wgetcmd=\"curl -L -O\"/g";
+
+        env::set_current_dir(metis_dir).unwrap();
+        run("sed", |cmd| {
+            cmd.arg("-i~").arg(set_wget_cmd).arg("get.Metis")
+        });
+        run(
+            env::current_dir()?.join("get.Metis").to_str().unwrap(),
+            |cmd| cmd,
+        );
+
+        env::set_current_dir(mumps_dir).unwrap();
+        run("sed", |cmd| {
+            cmd.arg("-i~").arg(set_wget_cmd).arg("get.Mumps")
+        });
+        run(
+            env::current_dir()?.join("get.Mumps").to_str().unwrap(),
+            |cmd| cmd,
+        );
+        link_libs.push((LibKind::Static, "coinmumps".to_string()));
+        link_libs.push((LibKind::Static, "coinmetis".to_string()));
+
         if let Ok(mut openblas_lib) = find_linux_lib("openblas", "cblas.h") {
             link_libs.append(&mut openblas_lib.libs);
             search_paths.append(&mut openblas_lib.search_paths);
