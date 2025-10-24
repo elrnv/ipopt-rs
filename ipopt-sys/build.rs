@@ -255,7 +255,7 @@ fn try_pkg_config() -> Result<LinkInfo, Error> {
         .probe(LIBRARY)
     {
         Ok(lib) => {
-            let lib_type = check_pkg_config_lib_type(LIBRARY, &lib);
+            let lib_type = LibKind::Dynamic;
             let link_info = LinkInfo {
                 libs: lib
                     .libs
@@ -837,22 +837,6 @@ fn build_with_mkl(install_dir: &Path, debug: bool) -> Result<LinkInfo, Error> {
     })
 }
 
-fn check_pkg_config_lib_type(lib_name: &str, lib: &pkg_config::Library) -> LibKind {
-    let mut lib_type = LibKind::Dynamic;
-
-    if cfg!(target_os = "linux") {
-        // Check if there is a static library, in which case link to that. Otherwise fallback
-        // to dynamic linking.
-        let static_lib = format!("lib{}.a", lib_name);
-        for path in lib.link_paths.iter() {
-            if path.join(&static_lib).exists() {
-                lib_type = LibKind::Static;
-            }
-        }
-    }
-    lib_type
-}
-
 // TODO: This should be handled with an external *-sys crate.
 // library is the name of the library to search for and header is an associated header to determine
 // that the include path is also valid.
@@ -864,7 +848,7 @@ fn find_linux_lib(library: &str, header: &str) -> Result<LinkInfo, Error> {
     {
         debug!("lib = {:?}", &lib);
 
-        let lib_type = check_pkg_config_lib_type(library, &lib);
+        let lib_type = LibKind::Dynamic;
 
         let link_info = LinkInfo {
             libs: lib
