@@ -441,16 +441,17 @@ fn load_link_info() -> Result<LinkInfo, Error> {
 }
 
 fn check_tarball_hashes(tarball_path: &Path, md5: &str, sha1: &str) -> Result<(), Error> {
-    use crypto::digest::Digest;
+    use md5::{Digest, Md5};
+    use sha1::Sha1;
     use std::io::Read;
 
     {
         let mut f = File::open(tarball_path)?;
         let mut buffer = Vec::new();
         f.read_to_end(&mut buffer)?;
-        let mut hasher = crypto::md5::Md5::new();
-        hasher.input(&buffer);
-        let dl_hex = hasher.result_str();
+        let mut hasher = Md5::new();
+        hasher.update(&buffer);
+        let dl_hex = format!("{:x}", hasher.finalize());
         if md5 != dl_hex {
             return Err(Error::HashMismatch);
         }
@@ -459,9 +460,9 @@ fn check_tarball_hashes(tarball_path: &Path, md5: &str, sha1: &str) -> Result<()
         let mut f = File::open(tarball_path)?;
         let mut buffer = Vec::new();
         f.read_to_end(&mut buffer)?;
-        let mut hasher = crypto::sha1::Sha1::new();
-        hasher.input(&buffer);
-        let dl_hex = hasher.result_str();
+        let mut hasher = Sha1::new();
+        hasher.update(&buffer);
+        let dl_hex = format!("{:x}", hasher.finalize());
         if sha1 != dl_hex {
             return Err(Error::HashMismatch);
         }
