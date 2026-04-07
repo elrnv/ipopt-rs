@@ -1,6 +1,9 @@
 #include "nlp.hpp"
 #include <coin/IpIpoptApplication.hpp>
 #include <coin/IpBlas.hpp>
+#include <coin/IpIpoptData.hpp>
+#include <coin/IpIteratesVector.hpp>
+#include <coin/IpDenseVector.hpp>
 
 #include <algorithm>
 
@@ -328,9 +331,23 @@ bool CNLP_Problem::intermediate_callback(
 {
     CNLP_Bool retval = 1;
     if (m_intermediate_cb && *m_intermediate_cb) {
+        const Ipopt::Number* x_values = nullptr;
+        Ipopt::Index x_count = 0;
+        if (ip_data != nullptr) {
+            Ipopt::SmartPtr<const Ipopt::IteratesVector> current_iterates = ip_data->curr();
+            if (Ipopt::IsValid(current_iterates)) {
+                Ipopt::SmartPtr<const Ipopt::Vector> current_x = current_iterates->x();
+                const auto* dense_x =
+                    dynamic_cast<const Ipopt::DenseVector*>(Ipopt::GetRawPtr(current_x));
+                if (dense_x != nullptr) {
+                    x_count = dense_x->Dim();
+                    x_values = dense_x->ExpandedValues();
+                }
+            }
+        }
         retval = (**m_intermediate_cb)(convert_algorithm_mode(mode), iter, obj_value, inf_pr, inf_du,
                 mu, d_norm, regularization_size, alpha_du,
-                alpha_pr, ls_trials, m_user_data);
+                alpha_pr, ls_trials, x_count, x_values, m_user_data);
     }
     return (retval!=0);
 }
@@ -357,4 +374,3 @@ void CNLP_Problem::finalize_solution(
     m_obj_sol = obj_value;
     // don't need to store the status, we get the status from the OptimizeTNLP method
 }
-
