@@ -450,7 +450,7 @@ pub enum AlgorithmMode {
 /// Pieces of solver data available from Ipopt after each iteration inside the intermediate
 /// callback.
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub struct IntermediateCallbackData {
+pub struct IntermediateCallbackData<'a> {
     /// Algorithm mode indicates which mode the algorithm is currently in.
     pub alg_mod: AlgorithmMode,
     /// The current iteration count.
@@ -506,6 +506,8 @@ pub struct IntermediateCallbackData {
     pub alpha_pr: Number,
     /// The number of backtracking line search steps (does not include second-order correction steps).
     pub ls_trials: Index,
+    /// The current primal iterate.
+    pub x: &'a [Number],
 }
 
 /// A data structure to store data returned by the solver.
@@ -528,7 +530,7 @@ pub struct SolveResult<'a, P: 'a> {
 /// information on the state of the optimization. This can be used to print some user-
 /// defined output. It also gives the user a way to terminate the optimization
 /// prematurely. If this method returns false, Ipopt will terminate the optimization.
-pub type IntermediateCallback<P> = fn(&mut P, IntermediateCallbackData) -> bool;
+pub type IntermediateCallback<P> = for<'a> fn(&mut P, IntermediateCallbackData<'a>) -> bool;
 
 /// Ipopt non-linear optimization problem solver.
 ///
@@ -959,10 +961,13 @@ impl<P: BasicProblem> Ipopt<P> {
         alpha_du: Number,
         alpha_pr: Number,
         ls_trials: Index,
+        x_count: Index,
+        x: *const Number,
         user_data: ffi::CNLP_UserDataPtr,
     ) -> Bool {
         let ip = &mut (*(user_data as *mut Ipopt<P>));
         if let Some(callback) = ip.intermediate_callback {
+            let x = slice::from_raw_parts(x, x_count as usize);
             (callback)(
                 &mut ip.nlp_interface,
                 IntermediateCallbackData {
@@ -980,6 +985,7 @@ impl<P: BasicProblem> Ipopt<P> {
                     alpha_du,
                     alpha_pr,
                     ls_trials,
+                    x,
                 },
             ) as Bool
         } else {

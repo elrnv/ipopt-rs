@@ -25,15 +25,17 @@ struct NLP {
     lambda_start: Vec<f64>, // Save constraint multipliers for warm start
 }
 impl NLP {
-    fn intermediate_cb(&mut self, data: IntermediateCallbackData) -> bool {
+    fn intermediate_cb(&mut self, data: IntermediateCallbackData<'_>) -> bool {
         self.count_iterations_cb(data);
+        assert_eq!(data.x.len(), 4);
+        assert!(data.x.iter().all(|value| value.is_finite()));
         data.inf_pr >= 1e-4
     }
-    fn count_iterations_cb(&mut self, data: IntermediateCallbackData) -> bool {
+    fn count_iterations_cb(&mut self, data: IntermediateCallbackData<'_>) -> bool {
         self.iterations = data.iter_count as usize;
         true
     }
-    fn scaling_check_cb(&mut self, data: IntermediateCallbackData) -> bool {
+    fn scaling_check_cb(&mut self, data: IntermediateCallbackData<'_>) -> bool {
         self.count_iterations_cb(data);
         if self.iterations < 10 {
             // A panic here will hopefully produce a failure, but IIRC it is UB since it goes
