@@ -377,12 +377,26 @@ impl<'a> From<i32> for IpoptOption<'a> {
     }
 }
 
-fn reconstruct_dual_slice<'a>(g: *const Number, num_dual_vars: usize) -> &'a [Number] {
-    if num_dual_vars == 0 {
+/// Build a slice from a pointer and a length, tolerating a null pointer when the length is zero.
+unsafe fn from_raw_parts_or_empty<'a, T>(ptr: *const T, len: usize) -> &'a [T] {
+    if len == 0 {
         &[]
     } else {
-        unsafe { slice::from_raw_parts(g, num_dual_vars) }
+        slice::from_raw_parts(ptr, len)
     }
+}
+
+/// Mutable counterpart of `from_raw_parts_or_empty`.
+unsafe fn from_raw_parts_mut_or_empty<'a, T>(ptr: *mut T, len: usize) -> &'a mut [T] {
+    if len == 0 {
+        &mut []
+    } else {
+        slice::from_raw_parts_mut(ptr, len)
+    }
+}
+
+fn reconstruct_dual_slice<'a>(g: *const Number, num_dual_vars: usize) -> &'a [Number] {
+    unsafe { from_raw_parts_or_empty(g, num_dual_vars) }
 }
 
 /// The solution of the optimization problem including variables, bound multipliers and Lagrange
@@ -1062,14 +1076,14 @@ impl<P: NewtonProblem> Ipopt<P> {
         if values.is_null() {
             /* return the structure. */
             nlp.hessian_indices(
-                slice::from_raw_parts_mut(irow, nele_hess as usize),
-                slice::from_raw_parts_mut(jcol, nele_hess as usize),
+                from_raw_parts_mut_or_empty(irow, nele_hess as usize),
+                from_raw_parts_mut_or_empty(jcol, nele_hess as usize),
             ) as Bool
         } else {
             /* return the values. */
             let result = nlp.hessian_values(
                 slice::from_raw_parts(x, n as usize),
-                slice::from_raw_parts_mut(values, nele_hess as usize),
+                from_raw_parts_mut_or_empty(values, nele_hess as usize),
             ) as Bool;
             // This problem has no constraints so we can multiply each entry by the
             // objective factor.
@@ -1169,7 +1183,7 @@ impl<P: ConstrainedProblem> Ipopt<P> {
             }
         }
         if init_lambda != 0 {
-            let lambda = slice::from_raw_parts_mut(lambda, m as usize);
+            let lambda = from_raw_parts_mut_or_empty(lambda, m as usize);
             if !nlp.initial_constraint_multipliers(lambda) {
                 for i in 0..m as usize {
                     lambda[i] = 0.0;
@@ -1214,8 +1228,8 @@ impl<P: ConstrainedProblem> Ipopt<P> {
             slice::from_raw_parts_mut(x_l, n as usize),
             slice::from_raw_parts_mut(x_u, n as usize),
         ) && nlp.constraint_bounds(
-            slice::from_raw_parts_mut(g_l, m as usize),
-            slice::from_raw_parts_mut(g_u, m as usize),
+            from_raw_parts_mut_or_empty(g_l, m as usize),
+            from_raw_parts_mut_or_empty(g_u, m as usize),
         )) as Bool
     }
 
@@ -1232,7 +1246,7 @@ impl<P: ConstrainedProblem> Ipopt<P> {
         nlp.constraint(
             slice::from_raw_parts(x, n as usize),
             new_x != 0,
-            slice::from_raw_parts_mut(g, m as usize),
+            from_raw_parts_mut_or_empty(g, m as usize),
         ) as Bool
     }
 
@@ -1252,15 +1266,15 @@ impl<P: ConstrainedProblem> Ipopt<P> {
         if values.is_null() {
             /* return the structure of the Jacobian */
             nlp.constraint_jacobian_indices(
-                slice::from_raw_parts_mut(irow, nele_jac as usize),
-                slice::from_raw_parts_mut(jcol, nele_jac as usize),
+                from_raw_parts_mut_or_empty(irow, nele_jac as usize),
+                from_raw_parts_mut_or_empty(jcol, nele_jac as usize),
             ) as Bool
         } else {
             /* return the values of the Jacobian of the constraints */
             nlp.constraint_jacobian_values(
                 slice::from_raw_parts(x, n as usize),
                 new_x != 0,
-                slice::from_raw_parts_mut(values, nele_jac as usize),
+                from_raw_parts_mut_or_empty(values, nele_jac as usize),
             ) as Bool
         }
     }
@@ -1286,8 +1300,8 @@ impl<P: ConstrainedProblem> Ipopt<P> {
         if values.is_null() {
             /* return the structure. */
             nlp.hessian_indices(
-                slice::from_raw_parts_mut(irow, nele_hess as usize),
-                slice::from_raw_parts_mut(jcol, nele_hess as usize),
+                from_raw_parts_mut_or_empty(irow, nele_hess as usize),
+                from_raw_parts_mut_or_empty(jcol, nele_hess as usize),
             ) as Bool
         } else {
             /* return the values. */
@@ -1295,8 +1309,8 @@ impl<P: ConstrainedProblem> Ipopt<P> {
                 slice::from_raw_parts(x, n as usize),
                 new_x != 0,
                 obj_factor,
-                slice::from_raw_parts(lambda, m as usize),
-                slice::from_raw_parts_mut(values, nele_hess as usize),
+                from_raw_parts_or_empty(lambda, m as usize),
+                from_raw_parts_mut_or_empty(values, nele_hess as usize),
             ) as Bool
         }
     }
@@ -1319,7 +1333,7 @@ impl<P: ConstrainedProblem> Ipopt<P> {
         *use_x_scaling =
             nlp.variable_scaling(slice::from_raw_parts_mut(x_scaling, n as usize)) as Bool;
         *use_g_scaling =
-            nlp.constraint_scaling(slice::from_raw_parts_mut(g_scaling, m as usize)) as Bool;
+            nlp.constraint_scaling(from_raw_parts_mut_or_empty(g_scaling, m as usize)) as Bool;
         true as Bool
     }
 }
@@ -1956,6 +1970,39 @@ mod tests {
         // returned by solver_data must always be valid.
         assert_eq!(primal_variables, nlp.init_point.as_slice());
         assert_eq!(constraint_multipliers, vec![0.0; 2].as_slice());
+        assert_eq!(lower_bound_multipliers, vec![0.0; 4].as_slice());
+        assert_eq!(upper_bound_multipliers, vec![0.0; 4].as_slice());
+    }
+
+    /// Test that a constrained problem with no constraints can be constructed.
+    #[test]
+    fn zero_constraints_construction_test() {
+        let nlp = NlpConstrained {
+            num_vars: 4,
+            num_constraints: 0,
+            num_constraint_jac_nnz: 0,
+            num_hess_nnz: 10,
+            constraint_lower: vec![],
+            constraint_upper: vec![],
+            init_point: vec![1.0, 5.0, 5.0, 1.0],
+            lower: vec![1.0; 4],
+            upper: vec![5.0; 4],
+        };
+
+        let solver = Ipopt::new(nlp.clone()).expect("Failed to create Ipopt solver");
+        let SolverData {
+            solution:
+                Solution {
+                    primal_variables,
+                    constraint_multipliers,
+                    lower_bound_multipliers,
+                    upper_bound_multipliers,
+                },
+            ..
+        } = solver.solver_data();
+
+        assert_eq!(primal_variables, nlp.init_point.as_slice());
+        assert_eq!(constraint_multipliers, &[] as &[Number]);
         assert_eq!(lower_bound_multipliers, vec![0.0; 4].as_slice());
         assert_eq!(upper_bound_multipliers, vec![0.0; 4].as_slice());
     }
