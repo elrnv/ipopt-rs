@@ -126,6 +126,7 @@ pub use crate::ffi::{
 
 use std::ffi::CString;
 use std::fmt::{Debug, Display, Formatter};
+use std::mem::MaybeUninit;
 use std::slice;
 
 /// The callback interface for a non-linear problem to be solved by Ipopt.
@@ -137,8 +138,17 @@ use std::slice;
 ///
 /// Each of the callbacks required during interior point iterations are allowed to fail.  In case
 /// of failure to produce values, simply return `false` where applicable.  This feature could be
-/// used to tell Ipopt to try smaller perturbations for `x` for instance. If the caller returns
-/// `true` but the output data was not set, then Ipopt may produce undefined behaviour.
+/// used to tell Ipopt to try smaller perturbations for `x` for instance. If the callback returns
+/// `true` but leaves part of the output slice unset, Ipopt reads whatever the buffer was initialized
+/// to (the bindings zero it first), so the numerics may be wrong but there is no UB.
+///
+/// The safe `&mut [Number]` callbacks (e.g. [`objective_grad`](BasicProblem::objective_grad)) are
+/// backed by `*_uninit` variants (e.g. [`objective_grad_uninit`](BasicProblem::objective_grad_uninit))
+/// that Ipopt actually calls. The default `*_uninit` implementation zero-initializes the raw output
+/// buffer before forwarding, which is what makes the safe callbacks sound. Performance-sensitive
+/// implementations may override the `*_uninit` variant directly to skip that zeroing write on the
+/// hot per-iteration path. See [`InitSlice`] and [`slice_assume_init_mut`] for producing the
+/// returned initialized slice.
 pub trait BasicProblem {
     /// Specify the indexing style used for arrays in this problem.
     /// (Default is zero-based)
@@ -189,6 +199,34 @@ pub trait BasicProblem {
     ///
     /// This function is internally called by Ipopt callback `eval_grad_f`.
     fn objective_grad(&self, x: &[Number], new_x: bool, grad_f: &mut [Number]) -> bool;
+
+    /// Zero-overhead variant of [`objective_grad`](BasicProblem::objective_grad).
+    ///
+    /// This is the method Ipopt's `eval_grad_f` callback actually calls. Its `grad_f` argument is a
+    /// view onto Ipopt's raw, uninitialized output buffer. Return `Some(grad_f)` (the same slice,
+    /// now fully initialized) on success, or `None` to signal failure.
+    ///
+    /// The default implementation zero-initializes the buffer and forwards to
+    /// [`objective_grad`](BasicProblem::objective_grad), so implementing only the safe variant is
+    /// sound. Override this method directly to avoid the extra zeroing write on the hot path.
+    /// Use [`InitSlice`] or [`slice_assume_init_mut`] to produce the returned slice.
+    fn objective_grad_uninit<'g>(
+        &self,
+        x: &[Number],
+        new_x: bool,
+        grad_f: &'g mut [MaybeUninit<Number>],
+    ) -> Option<&'g mut [Number]> {
+        for e in grad_f.iter_mut() {
+            e.write(0.0);
+        }
+        // SAFETY: every element was written above.
+        let init = unsafe { slice_assume_init_mut(grad_f) };
+        if self.objective_grad(x, new_x, init) {
+            Some(init)
+        } else {
+            None
+        }
+    }
 
     /// Provide custom variable scaling.
     ///
@@ -244,6 +282,32 @@ pub trait NewtonProblem: BasicProblem {
     /// This function is internally called by Ipopt callback `eval_h` and each value is
     /// premultiplied by `Ipopt`'s `obj_factor` as necessary.
     fn hessian_values(&self, x: &[Number], vals: &mut [Number]) -> bool;
+
+    /// Zero-overhead variant of [`hessian_values`](NewtonProblem::hessian_values).
+    ///
+    /// This is the method Ipopt's `eval_h` callback actually calls when it requests values. Its
+    /// `vals` argument views Ipopt's raw, uninitialized output buffer. Return `Some(vals)` (the
+    /// same slice, now fully initialized) on success, or `None` to signal failure.
+    ///
+    /// The default implementation zero-initializes the buffer and forwards to
+    /// [`hessian_values`](NewtonProblem::hessian_values). Override to skip the zeroing on the hot
+    /// path. Use [`InitSlice`] or [`slice_assume_init_mut`] to produce the returned slice.
+    fn hessian_values_uninit<'v>(
+        &self,
+        x: &[Number],
+        vals: &'v mut [MaybeUninit<Number>],
+    ) -> Option<&'v mut [Number]> {
+        for e in vals.iter_mut() {
+            e.write(0.0);
+        }
+        // SAFETY: every element was written above.
+        let init = unsafe { slice_assume_init_mut(vals) };
+        if self.hessian_values(x, init) {
+            Some(init)
+        } else {
+            None
+        }
+    }
 }
 
 /// Extends the [`BasicProblem`](trait.BasicProblem.html) trait to enable equality and inequality constraints.
@@ -267,6 +331,33 @@ pub trait ConstrainedProblem: BasicProblem {
     /// The output slice `g` is guaranteed to be the same size as `num_constraints`.
     /// This function is internally called by Ipopt callback `eval_g`.
     fn constraint(&self, x: &[Number], new_x: bool, g: &mut [Number]) -> bool;
+
+    /// Zero-overhead variant of [`constraint`](ConstrainedProblem::constraint).
+    ///
+    /// This is the method Ipopt's `eval_g` callback actually calls. Its `g` argument views Ipopt's
+    /// raw, uninitialized output buffer. Return `Some(g)` (the same slice, now fully initialized)
+    /// on success, or `None` to signal failure.
+    ///
+    /// The default implementation zero-initializes the buffer and forwards to
+    /// [`constraint`](ConstrainedProblem::constraint). Override to skip the zeroing on the hot
+    /// path. Use [`InitSlice`] or [`slice_assume_init_mut`] to produce the returned slice.
+    fn constraint_uninit<'g>(
+        &self,
+        x: &[Number],
+        new_x: bool,
+        g: &'g mut [MaybeUninit<Number>],
+    ) -> Option<&'g mut [Number]> {
+        for e in g.iter_mut() {
+            e.write(0.0);
+        }
+        // SAFETY: every element was written above.
+        let init = unsafe { slice_assume_init_mut(g) };
+        if self.constraint(x, new_x, init) {
+            Some(init)
+        } else {
+            None
+        }
+    }
     /// Specify lower and upper bounds, `g_l` and `g_u` respectively, on the constraint function.
     ///
     /// Both slices will have the same size as what `num_constraints` returns.
@@ -298,6 +389,35 @@ pub trait ConstrainedProblem: BasicProblem {
     /// `column` as specified in `constraint_jacobian_indices`.
     /// This function is internally called by Ipopt callback `eval_jac_g`.
     fn constraint_jacobian_values(&self, x: &[Number], new_x: bool, vals: &mut [Number]) -> bool;
+
+    /// Zero-overhead variant of
+    /// [`constraint_jacobian_values`](ConstrainedProblem::constraint_jacobian_values).
+    ///
+    /// This is the method Ipopt's `eval_jac_g` callback actually calls when it requests values. Its
+    /// `vals` argument views Ipopt's raw, uninitialized output buffer. Return `Some(vals)` (the
+    /// same slice, now fully initialized) on success, or `None` to signal failure.
+    ///
+    /// The default implementation zero-initializes the buffer and forwards to
+    /// [`constraint_jacobian_values`](ConstrainedProblem::constraint_jacobian_values). Override to
+    /// skip the zeroing on the hot path. Use [`InitSlice`] or [`slice_assume_init_mut`] to produce
+    /// the returned slice.
+    fn constraint_jacobian_values_uninit<'v>(
+        &self,
+        x: &[Number],
+        new_x: bool,
+        vals: &'v mut [MaybeUninit<Number>],
+    ) -> Option<&'v mut [Number]> {
+        for e in vals.iter_mut() {
+            e.write(0.0);
+        }
+        // SAFETY: every element was written above.
+        let init = unsafe { slice_assume_init_mut(vals) };
+        if self.constraint_jacobian_values(x, new_x, init) {
+            Some(init)
+        } else {
+            None
+        }
+    }
     /// Number of non-zeros in the Hessian matrix.
     ///
     /// This includes the constraint Hessian.
@@ -327,6 +447,35 @@ pub trait ConstrainedProblem: BasicProblem {
         lambda: &[Number],
         vals: &mut [Number],
     ) -> bool;
+
+    /// Zero-overhead variant of [`hessian_values`](ConstrainedProblem::hessian_values).
+    ///
+    /// This is the method Ipopt's `eval_h` callback actually calls when it requests values. Its
+    /// `vals` argument views Ipopt's raw, uninitialized output buffer. Return `Some(vals)` (the
+    /// same slice, now fully initialized) on success, or `None` to signal failure.
+    ///
+    /// The default implementation zero-initializes the buffer and forwards to
+    /// [`hessian_values`](ConstrainedProblem::hessian_values). Override to skip the zeroing on the
+    /// hot path. Use [`InitSlice`] or [`slice_assume_init_mut`] to produce the returned slice.
+    fn hessian_values_uninit<'v>(
+        &self,
+        x: &[Number],
+        new_x: bool,
+        obj_factor: Number,
+        lambda: &[Number],
+        vals: &'v mut [MaybeUninit<Number>],
+    ) -> Option<&'v mut [Number]> {
+        for e in vals.iter_mut() {
+            e.write(0.0);
+        }
+        // SAFETY: every element was written above.
+        let init = unsafe { slice_assume_init_mut(vals) };
+        if self.hessian_values(x, new_x, obj_factor, lambda, init) {
+            Some(init)
+        } else {
+            None
+        }
+    }
 
     /// Provide custom constraint function scaling.
     ///
@@ -386,12 +535,98 @@ unsafe fn from_raw_parts_or_empty<'a, T>(ptr: *const T, len: usize) -> &'a [T] {
     }
 }
 
-/// Mutable counterpart of `from_raw_parts_or_empty`.
-unsafe fn from_raw_parts_mut_or_empty<'a, T>(ptr: *mut T, len: usize) -> &'a mut [T] {
+/// Reinterpret a fully-initialized slice of [`MaybeUninit`]`<T>` as a slice of `T`.
+///
+/// This is the stable-Rust equivalent of the unstable `MaybeUninit::slice_assume_init_mut`. It is
+/// exposed so that implementors of the `*_uninit` callback variants can convert the output buffer
+/// back into an initialized slice to return.
+///
+/// # Safety
+///
+/// Every element of `s` must have been initialized (e.g. via [`MaybeUninit::write`]). Calling this
+/// while any element is still uninitialized is undefined behaviour.
+#[inline]
+pub unsafe fn slice_assume_init_mut<T>(s: &mut [MaybeUninit<T>]) -> &mut [T] {
+    // SAFETY: `MaybeUninit<T>` is guaranteed to have the same layout as `T`, and the caller
+    // guarantees every element is initialized.
+    &mut *(s as *mut [MaybeUninit<T>] as *mut [T])
+}
+
+/// Build a `&mut [MaybeUninit<T>]` over a raw buffer, tolerating a null pointer when `len == 0`.
+///
+/// This is sound to call over uninitialized memory, which is exactly what Ipopt gives for its output buffers.
+unsafe fn uninit_from_raw_mut<'a, T>(ptr: *mut T, len: usize) -> &'a mut [MaybeUninit<T>] {
     if len == 0 {
         &mut []
     } else {
-        slice::from_raw_parts_mut(ptr, len)
+        slice::from_raw_parts_mut(ptr as *mut MaybeUninit<T>, len)
+    }
+}
+
+/// Build a zero-initialized `&mut [T]` over a raw (possibly uninitialized) buffer.
+///
+/// The buffer is first viewed as `[MaybeUninit<T>]` (sound over uninit memory), every element is
+/// written with `zero`, and only then is it reinterpreted as `[T]`. This is used for the
+/// low-frequency callbacks where the one-time zeroing cost is negligible.
+unsafe fn zeroed_from_raw_mut<'a, T: Copy>(ptr: *mut T, len: usize, zero: T) -> &'a mut [T] {
+    let s = uninit_from_raw_mut(ptr, len);
+    for e in s.iter_mut() {
+        e.write(zero);
+    }
+    slice_assume_init_mut(s)
+}
+
+/// Safe initialization of an uninitialized output buffer, returning the now-initialized slice.
+///
+/// Implemented for `[MaybeUninit<T>]`, this provides an ergonomic, `unsafe`-free way to populate the
+/// output buffer handed to the `*_uninit` callback variants and hand back the initialized slice.
+///
+/// ```
+/// use ipopt::InitSlice;
+/// use std::mem::MaybeUninit;
+///
+/// let mut buf = [MaybeUninit::<f64>::uninit(); 3];
+/// let init: &[f64] = buf.init_from_fn(|i| i as f64);
+/// assert_eq!(init, &[0.0, 1.0, 2.0]);
+/// ```
+pub trait InitSlice<T> {
+    /// Write every element from `f(index)`, then return the fully initialized slice.
+    fn init_from_fn(&mut self, f: impl FnMut(usize) -> T) -> &mut [T];
+    /// Copy from a source slice of the same length, then return the fully initialized slice.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `src.len()` does not equal the length of this slice.
+    fn write_copy_of_slice(&mut self, src: &[T]) -> &mut [T]
+    where
+        T: Copy;
+}
+
+impl<T> InitSlice<T> for [MaybeUninit<T>] {
+    #[inline]
+    fn init_from_fn(&mut self, mut f: impl FnMut(usize) -> T) -> &mut [T] {
+        for (i, e) in self.iter_mut().enumerate() {
+            e.write(f(i));
+        }
+        // SAFETY: every element was written by the loop above.
+        unsafe { slice_assume_init_mut(self) }
+    }
+
+    #[inline]
+    fn write_copy_of_slice(&mut self, src: &[T]) -> &mut [T]
+    where
+        T: Copy,
+    {
+        assert_eq!(
+            self.len(),
+            src.len(),
+            "source length must match the output buffer length"
+        );
+        for (e, &s) in self.iter_mut().zip(src) {
+            e.write(s);
+        }
+        // SAFETY: every element was written by the loop above (lengths are equal).
+        unsafe { slice_assume_init_mut(self) }
     }
 }
 
@@ -793,22 +1028,15 @@ impl<P: BasicProblem> Ipopt<P> {
         assert_eq!(m, 0);
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
         if init_x != 0 {
-            let x = slice::from_raw_parts_mut(x, n as usize);
-            if !nlp.initial_point(x) {
-                for i in 0..n as usize {
-                    x[i] = 0.0;
-                } // initialize to zero!
-            }
+            // Zero-initialize first. Makes the `&mut` sound and doubles as the zero fallback
+            // used when `initial_point` returns `false`.
+            nlp.initial_point(zeroed_from_raw_mut(x, n as usize, 0.0));
         }
         if init_z != 0 {
-            let z_l = slice::from_raw_parts_mut(z_l, n as usize);
-            let z_u = slice::from_raw_parts_mut(z_u, n as usize);
-            if !nlp.initial_bounds_multipliers(z_l, z_u) {
-                for i in 0..n as usize {
-                    z_l[i] = 0.0;
-                    z_u[i] = 0.0;
-                } // initialize to zero!
-            }
+            nlp.initial_bounds_multipliers(
+                zeroed_from_raw_mut(z_l, n as usize, 0.0),
+                zeroed_from_raw_mut(z_u, n as usize, 0.0),
+            );
         }
         true as Bool
     }
@@ -851,8 +1079,8 @@ impl<P: BasicProblem> Ipopt<P> {
         assert_eq!(m, 0);
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
         nlp.bounds(
-            slice::from_raw_parts_mut(x_l, n as usize),
-            slice::from_raw_parts_mut(x_u, n as usize),
+            zeroed_from_raw_mut(x_l, n as usize, 0.0),
+            zeroed_from_raw_mut(x_u, n as usize, 0.0),
         ) as Bool
     }
 
@@ -864,6 +1092,8 @@ impl<P: BasicProblem> Ipopt<P> {
         obj_value: *mut Number,
         user_data: ffi::CNLP_UserDataPtr,
     ) -> Bool {
+        // Initialize Ipopt's scalar output buffer.
+        obj_value.write(0.0);
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
         nlp.objective(
             slice::from_raw_parts(x, n as usize),
@@ -881,11 +1111,12 @@ impl<P: BasicProblem> Ipopt<P> {
         user_data: ffi::CNLP_UserDataPtr,
     ) -> Bool {
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
-        nlp.objective_grad(
+        nlp.objective_grad_uninit(
             slice::from_raw_parts(x, n as usize),
             new_x != 0,
-            slice::from_raw_parts_mut(grad_f, n as usize),
-        ) as Bool
+            uninit_from_raw_mut(grad_f, n as usize),
+        )
+        .is_some() as Bool
     }
 
     /// Placeholder constraint function with no constraints.
@@ -955,7 +1186,7 @@ impl<P: BasicProblem> Ipopt<P> {
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
         *obj_scaling = nlp.objective_scaling();
         *use_x_scaling =
-            nlp.variable_scaling(slice::from_raw_parts_mut(x_scaling, n as usize)) as Bool;
+            nlp.variable_scaling(zeroed_from_raw_mut(x_scaling, n as usize, 0.0)) as Bool;
         *use_g_scaling = false as Bool;
         true as Bool
     }
@@ -1076,20 +1307,25 @@ impl<P: NewtonProblem> Ipopt<P> {
         if values.is_null() {
             /* return the structure. */
             nlp.hessian_indices(
-                from_raw_parts_mut_or_empty(irow, nele_hess as usize),
-                from_raw_parts_mut_or_empty(jcol, nele_hess as usize),
+                zeroed_from_raw_mut(irow, nele_hess as usize, 0),
+                zeroed_from_raw_mut(jcol, nele_hess as usize, 0),
             ) as Bool
         } else {
             /* return the values. */
-            let result = nlp.hessian_values(
+            let init = nlp.hessian_values_uninit(
                 slice::from_raw_parts(x, n as usize),
-                from_raw_parts_mut_or_empty(values, nele_hess as usize),
-            ) as Bool;
-            // This problem has no constraints so we can multiply each entry by the
-            // objective factor.
-            let start_idx = nlp.indexing_style() as isize;
-            for i in start_idx..nele_hess as isize {
-                *values.offset(i) *= obj_factor;
+                uninit_from_raw_mut(values, nele_hess as usize),
+            );
+            let result = init.is_some() as Bool;
+            if let Some(vals) = init {
+                // This problem has no constraints so we can multiply each entry by the
+                // objective factor.
+                let start_idx = nlp.indexing_style() as usize;
+                if let Some(tail) = vals.get_mut(start_idx..) {
+                    for v in tail {
+                        *v *= obj_factor;
+                    }
+                }
             }
             result
         }
@@ -1164,31 +1400,18 @@ impl<P: ConstrainedProblem> Ipopt<P> {
         user_data: ffi::CNLP_UserDataPtr,
     ) -> Bool {
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
+        // Zero-initialize the output buffers first.
         if init_x != 0 {
-            let x = slice::from_raw_parts_mut(x, n as usize);
-            if !nlp.initial_point(x) {
-                for i in 0..n as usize {
-                    x[i] = 0.0;
-                } // initialize to zero!
-            }
+            nlp.initial_point(zeroed_from_raw_mut(x, n as usize, 0.0));
         }
         if init_z != 0 {
-            let z_l = slice::from_raw_parts_mut(z_l, n as usize);
-            let z_u = slice::from_raw_parts_mut(z_u, n as usize);
-            if !nlp.initial_bounds_multipliers(z_l, z_u) {
-                for i in 0..n as usize {
-                    z_l[i] = 0.0;
-                    z_u[i] = 0.0;
-                } // initialize to zero!
-            }
+            nlp.initial_bounds_multipliers(
+                zeroed_from_raw_mut(z_l, n as usize, 0.0),
+                zeroed_from_raw_mut(z_u, n as usize, 0.0),
+            );
         }
         if init_lambda != 0 {
-            let lambda = from_raw_parts_mut_or_empty(lambda, m as usize);
-            if !nlp.initial_constraint_multipliers(lambda) {
-                for i in 0..m as usize {
-                    lambda[i] = 0.0;
-                } // initialize to zero!
-            }
+            nlp.initial_constraint_multipliers(zeroed_from_raw_mut(lambda, m as usize, 0.0));
         }
         true as Bool
     }
@@ -1225,11 +1448,11 @@ impl<P: ConstrainedProblem> Ipopt<P> {
     ) -> Bool {
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
         (nlp.bounds(
-            slice::from_raw_parts_mut(x_l, n as usize),
-            slice::from_raw_parts_mut(x_u, n as usize),
+            zeroed_from_raw_mut(x_l, n as usize, 0.0),
+            zeroed_from_raw_mut(x_u, n as usize, 0.0),
         ) && nlp.constraint_bounds(
-            from_raw_parts_mut_or_empty(g_l, m as usize),
-            from_raw_parts_mut_or_empty(g_u, m as usize),
+            zeroed_from_raw_mut(g_l, m as usize, 0.0),
+            zeroed_from_raw_mut(g_u, m as usize, 0.0),
         )) as Bool
     }
 
@@ -1243,11 +1466,12 @@ impl<P: ConstrainedProblem> Ipopt<P> {
         user_data: ffi::CNLP_UserDataPtr,
     ) -> Bool {
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
-        nlp.constraint(
+        nlp.constraint_uninit(
             slice::from_raw_parts(x, n as usize),
             new_x != 0,
-            from_raw_parts_mut_or_empty(g, m as usize),
-        ) as Bool
+            uninit_from_raw_mut(g, m as usize),
+        )
+        .is_some() as Bool
     }
 
     /// Evaluate the constraint Jacobian.
@@ -1266,16 +1490,17 @@ impl<P: ConstrainedProblem> Ipopt<P> {
         if values.is_null() {
             /* return the structure of the Jacobian */
             nlp.constraint_jacobian_indices(
-                from_raw_parts_mut_or_empty(irow, nele_jac as usize),
-                from_raw_parts_mut_or_empty(jcol, nele_jac as usize),
+                zeroed_from_raw_mut(irow, nele_jac as usize, 0),
+                zeroed_from_raw_mut(jcol, nele_jac as usize, 0),
             ) as Bool
         } else {
             /* return the values of the Jacobian of the constraints */
-            nlp.constraint_jacobian_values(
+            nlp.constraint_jacobian_values_uninit(
                 slice::from_raw_parts(x, n as usize),
                 new_x != 0,
-                from_raw_parts_mut_or_empty(values, nele_jac as usize),
-            ) as Bool
+                uninit_from_raw_mut(values, nele_jac as usize),
+            )
+            .is_some() as Bool
         }
     }
 
@@ -1300,18 +1525,19 @@ impl<P: ConstrainedProblem> Ipopt<P> {
         if values.is_null() {
             /* return the structure. */
             nlp.hessian_indices(
-                from_raw_parts_mut_or_empty(irow, nele_hess as usize),
-                from_raw_parts_mut_or_empty(jcol, nele_hess as usize),
+                zeroed_from_raw_mut(irow, nele_hess as usize, 0),
+                zeroed_from_raw_mut(jcol, nele_hess as usize, 0),
             ) as Bool
         } else {
             /* return the values. */
-            nlp.hessian_values(
+            nlp.hessian_values_uninit(
                 slice::from_raw_parts(x, n as usize),
                 new_x != 0,
                 obj_factor,
                 from_raw_parts_or_empty(lambda, m as usize),
-                from_raw_parts_mut_or_empty(values, nele_hess as usize),
-            ) as Bool
+                uninit_from_raw_mut(values, nele_hess as usize),
+            )
+            .is_some() as Bool
         }
     }
 
@@ -1331,9 +1557,9 @@ impl<P: ConstrainedProblem> Ipopt<P> {
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
         *obj_scaling = nlp.objective_scaling();
         *use_x_scaling =
-            nlp.variable_scaling(slice::from_raw_parts_mut(x_scaling, n as usize)) as Bool;
+            nlp.variable_scaling(zeroed_from_raw_mut(x_scaling, n as usize, 0.0)) as Bool;
         *use_g_scaling =
-            nlp.constraint_scaling(from_raw_parts_mut_or_empty(g_scaling, m as usize)) as Bool;
+            nlp.constraint_scaling(zeroed_from_raw_mut(g_scaling, m as usize, 0.0)) as Bool;
         true as Bool
     }
 }
@@ -2005,5 +2231,52 @@ mod tests {
         assert_eq!(constraint_multipliers, &[] as &[Number]);
         assert_eq!(lower_bound_multipliers, vec![0.0; 4].as_slice());
         assert_eq!(upper_bound_multipliers, vec![0.0; 4].as_slice());
+    }
+
+    // The following tests exercise the uninitialized-memory helpers without any FFI,
+    // so they can be run under Miri to validate the unsafe slice handling.
+
+    #[test]
+    fn slice_assume_init_mut_roundtrips() {
+        let mut buf = [
+            MaybeUninit::new(1.0),
+            MaybeUninit::new(2.0),
+            MaybeUninit::new(3.0),
+        ];
+        // SAFETY: every element was initialized above.
+        let init: &[Number] = unsafe { slice_assume_init_mut(&mut buf) };
+        assert_eq!(init, [1.0, 2.0, 3.0].as_slice());
+    }
+
+    #[test]
+    fn init_slice_helpers_need_no_unsafe() {
+        let mut buf = [MaybeUninit::<Number>::uninit(); 4];
+        let out: &[Number] = buf.init_from_fn(|i| i as Number * 2.0);
+        assert_eq!(out, [0.0, 2.0, 4.0, 6.0].as_slice());
+
+        let mut idx = [MaybeUninit::<Index>::uninit(); 3];
+        let out: &[Index] = idx.write_copy_of_slice(&[7, 8, 9]);
+        assert_eq!(out, [7, 8, 9].as_slice());
+    }
+
+    #[test]
+    fn zeroed_from_raw_mut_initializes_uninit_buffer() {
+        // We simulate Ipopt's uninitialized output buffer.
+        let mut buf: Vec<MaybeUninit<Number>> = Vec::with_capacity(5);
+        unsafe {
+            buf.set_len(5);
+            let ptr = buf.as_mut_ptr() as *mut Number;
+            let s = zeroed_from_raw_mut(ptr, 5, 0.0);
+            assert_eq!(&s[..], [0.0; 5].as_slice());
+            s[2] = 42.0;
+            assert_eq!(*ptr.add(2), 42.0);
+        }
+    }
+
+    #[test]
+    fn uninit_from_raw_mut_tolerates_null_when_empty() {
+        // SAFETY: len 0 => an empty slice is returned without dereferencing the null pointer.
+        let s = unsafe { uninit_from_raw_mut::<Number>(std::ptr::null_mut(), 0) };
+        assert!(s.is_empty());
     }
 }
