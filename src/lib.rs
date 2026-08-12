@@ -1045,15 +1045,18 @@ impl<P: BasicProblem> Ipopt<P> {
         assert_eq!(m, 0);
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
         if init_x != 0 {
-            // Zero-initialize first. Makes the `&mut` sound and doubles as the zero fallback
-            // used when `initial_point` returns `false`.
-            nlp.initial_point(zeroed_from_raw_mut(x, n as usize, 0.0));
+            let x = zeroed_from_raw_mut(x, n as usize, 0.0);
+            if !nlp.initial_point(x) {
+                x.fill(0.0);
+            }
         }
         if init_z != 0 {
-            nlp.initial_bounds_multipliers(
-                zeroed_from_raw_mut(z_l, n as usize, 0.0),
-                zeroed_from_raw_mut(z_u, n as usize, 0.0),
-            );
+            let z_l = zeroed_from_raw_mut(z_l, n as usize, 0.0);
+            let z_u = zeroed_from_raw_mut(z_u, n as usize, 0.0);
+            if !nlp.initial_bounds_multipliers(z_l, z_u) {
+                z_l.fill(0.0);
+                z_u.fill(0.0);
+            }
         }
         true as Bool
     }
@@ -1427,16 +1430,24 @@ impl<P: ConstrainedProblem> Ipopt<P> {
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
         // Zero-initialize the output buffers first.
         if init_x != 0 {
-            nlp.initial_point(zeroed_from_raw_mut(x, n as usize, 0.0));
+            let x = zeroed_from_raw_mut(x, n as usize, 0.0);
+            if !nlp.initial_point(x) {
+                x.fill(0.0);
+            }
         }
         if init_z != 0 {
-            nlp.initial_bounds_multipliers(
-                zeroed_from_raw_mut(z_l, n as usize, 0.0),
-                zeroed_from_raw_mut(z_u, n as usize, 0.0),
-            );
+            let z_l = zeroed_from_raw_mut(z_l, n as usize, 0.0);
+            let z_u = zeroed_from_raw_mut(z_u, n as usize, 0.0);
+            if !nlp.initial_bounds_multipliers(z_l, z_u) {
+                z_l.fill(0.0);
+                z_u.fill(0.0);
+            }
         }
         if init_lambda != 0 {
-            nlp.initial_constraint_multipliers(zeroed_from_raw_mut(lambda, m as usize, 0.0));
+            let lambda = zeroed_from_raw_mut(lambda, m as usize, 0.0);
+            if !nlp.initial_constraint_multipliers(lambda) {
+                lambda.fill(0.0);
+            }
         }
         true as Bool
     }
@@ -2078,6 +2089,7 @@ mod tests {
         init_point: Vec<Number>,
         lower: Vec<Number>,
         upper: Vec<Number>,
+        fail_initial_callbacks_after_partial_write: bool,
     }
 
     impl BasicProblem for NlpConstrained {
@@ -2090,7 +2102,21 @@ mod tests {
             true
         }
         fn initial_point(&self, x: &mut [Number]) -> bool {
+            if self.fail_initial_callbacks_after_partial_write {
+                x[0] = 1.0;
+                return false;
+            }
             x.copy_from_slice(&self.init_point.clone());
+            true
+        }
+        fn initial_bounds_multipliers(&self, z_l: &mut [Number], z_u: &mut [Number]) -> bool {
+            if self.fail_initial_callbacks_after_partial_write {
+                z_l[0] = 2.0;
+                z_u[1] = 3.0;
+                return false;
+            }
+            z_l.fill(0.0);
+            z_u.fill(0.0);
             true
         }
         fn objective(&self, _: &[Number], _: bool, _: &mut Number) -> bool {
@@ -2112,6 +2138,14 @@ mod tests {
         fn constraint_bounds(&self, g_l: &mut [Number], g_u: &mut [Number]) -> bool {
             g_l.copy_from_slice(&self.constraint_lower);
             g_u.copy_from_slice(&self.constraint_upper);
+            true
+        }
+        fn initial_constraint_multipliers(&self, lambda: &mut [Number]) -> bool {
+            if self.fail_initial_callbacks_after_partial_write {
+                lambda[0] = 4.0;
+                return false;
+            }
+            lambda.fill(0.0);
             true
         }
         fn constraint(&self, _: &[Number], _: bool, _: &mut [Number]) -> bool {
@@ -2157,6 +2191,7 @@ mod tests {
             init_point: vec![1.0, 5.0, 5.0, 1.0],
             lower: vec![1.0; 4],
             upper: vec![5.0; 4],
+            fail_initial_callbacks_after_partial_write: false,
         };
 
         assert!(Ipopt::new(nlp.clone()).is_ok());
@@ -2214,6 +2249,7 @@ mod tests {
             init_point: vec![1.0, 5.0, 5.0, 1.0],
             lower: vec![1.0; 4],
             upper: vec![5.0; 4],
+            fail_initial_callbacks_after_partial_write: false,
         };
 
         let solver = Ipopt::new(nlp.clone()).expect("Failed to create Ipopt solver");
@@ -2250,6 +2286,7 @@ mod tests {
             init_point: vec![1.0, 5.0, 5.0, 1.0],
             lower: vec![1.0; 4],
             upper: vec![5.0; 4],
+            fail_initial_callbacks_after_partial_write: false,
         };
 
         let solver = Ipopt::new(nlp.clone()).expect("Failed to create Ipopt solver");
@@ -2268,6 +2305,77 @@ mod tests {
         assert_eq!(constraint_multipliers, &[] as &[Number]);
         assert_eq!(lower_bound_multipliers, vec![0.0; 4].as_slice());
         assert_eq!(upper_bound_multipliers, vec![0.0; 4].as_slice());
+    }
+
+    #[test]
+    fn false_initial_callbacks_restore_zero_fallbacks() {
+        let nlp = NlpConstrained {
+            num_vars: 3,
+            num_constraints: 2,
+            num_constraint_jac_nnz: 2,
+            num_hess_nnz: 0,
+            constraint_lower: vec![0.0; 2],
+            constraint_upper: vec![0.0; 2],
+            init_point: vec![0.0; 3],
+            lower: vec![0.0; 3],
+            upper: vec![0.0; 3],
+            fail_initial_callbacks_after_partial_write: true,
+        };
+        let mut ipopt = Ipopt {
+            nlp_internal: std::ptr::null_mut(),
+            nlp_interface: nlp,
+            intermediate_callback: None,
+            num_primal_variables: 3,
+            num_dual_variables: 2,
+        };
+        let user_data = &mut ipopt as *mut Ipopt<NlpConstrained> as ffi::CNLP_UserDataPtr;
+
+        let mut x = [9.0; 3];
+        let mut z_l = [9.0; 3];
+        let mut z_u = [9.0; 3];
+        // SAFETY: all pointers refer to writable arrays of the lengths supplied to the shim, and
+        // `user_data` points to an `Ipopt<NlpConstrained>` for the duration of the call.
+        unsafe {
+            Ipopt::<NlpConstrained>::basic_init(
+                3,
+                1 as Bool,
+                x.as_mut_ptr(),
+                1 as Bool,
+                z_l.as_mut_ptr(),
+                z_u.as_mut_ptr(),
+                0,
+                0 as Bool,
+                std::ptr::null_mut(),
+                user_data,
+            );
+        }
+        assert_eq!(x, [0.0; 3]);
+        assert_eq!(z_l, [0.0; 3]);
+        assert_eq!(z_u, [0.0; 3]);
+
+        let mut x = [9.0; 3];
+        let mut z_l = [9.0; 3];
+        let mut z_u = [9.0; 3];
+        let mut lambda = [9.0; 2];
+        // SAFETY: as above, with a writable constraint-multiplier buffer of length two.
+        unsafe {
+            Ipopt::<NlpConstrained>::init(
+                3,
+                1 as Bool,
+                x.as_mut_ptr(),
+                1 as Bool,
+                z_l.as_mut_ptr(),
+                z_u.as_mut_ptr(),
+                2,
+                1 as Bool,
+                lambda.as_mut_ptr(),
+                user_data,
+            );
+        }
+        assert_eq!(x, [0.0; 3]);
+        assert_eq!(z_l, [0.0; 3]);
+        assert_eq!(z_u, [0.0; 3]);
+        assert_eq!(lambda, [0.0; 2]);
     }
 
     // The following tests exercise the uninitialized-memory helpers without any FFI,
