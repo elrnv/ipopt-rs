@@ -61,7 +61,7 @@
  *     // There are two independent variables: x and y.
  *     fn num_variables(&self) -> usize {
  *         2
- *     }    
+ *     }
  *     // The variables are unbounded. Any lower bound lower than -10^19 and upper bound higher
  *     // than 10^19 is treated effectively as infinity. These absolute infinity limits can be
  *     // changed via the `nlp_lower_bound_inf` and `nlp_upper_bound_inf` Ipopt options.
@@ -560,6 +560,23 @@ unsafe fn uninit_from_raw_mut<'a, T>(ptr: *mut T, len: usize) -> &'a mut [MaybeU
         &mut []
     } else {
         slice::from_raw_parts_mut(ptr as *mut MaybeUninit<T>, len)
+    }
+}
+
+/// Accept an initialized callback result only when it covers the complete original buffer.
+#[inline]
+fn initialized_output_for_buffer<'a, T>(
+    initialized: Option<&'a mut [T]>,
+    buffer: *mut T,
+    len: usize,
+) -> Option<&'a mut [T]> {
+    match initialized {
+        Some(output)
+            if output.len() == len && (len == 0 || output.as_ptr() == buffer as *const T) =>
+        {
+            Some(output)
+        }
+        _ => None,
     }
 }
 
@@ -1111,10 +1128,14 @@ impl<P: BasicProblem> Ipopt<P> {
         user_data: ffi::CNLP_UserDataPtr,
     ) -> Bool {
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
-        nlp.objective_grad_uninit(
-            slice::from_raw_parts(x, n as usize),
-            new_x != 0,
-            uninit_from_raw_mut(grad_f, n as usize),
+        initialized_output_for_buffer(
+            nlp.objective_grad_uninit(
+                slice::from_raw_parts(x, n as usize),
+                new_x != 0,
+                uninit_from_raw_mut(grad_f, n as usize),
+            ),
+            grad_f,
+            n as usize,
         )
         .is_some() as Bool
     }
@@ -1312,9 +1333,13 @@ impl<P: NewtonProblem> Ipopt<P> {
             ) as Bool
         } else {
             /* return the values. */
-            let init = nlp.hessian_values_uninit(
-                slice::from_raw_parts(x, n as usize),
-                uninit_from_raw_mut(values, nele_hess as usize),
+            let init = initialized_output_for_buffer(
+                nlp.hessian_values_uninit(
+                    slice::from_raw_parts(x, n as usize),
+                    uninit_from_raw_mut(values, nele_hess as usize),
+                ),
+                values,
+                nele_hess as usize,
             );
             let result = init.is_some() as Bool;
             if let Some(vals) = init {
@@ -1466,10 +1491,14 @@ impl<P: ConstrainedProblem> Ipopt<P> {
         user_data: ffi::CNLP_UserDataPtr,
     ) -> Bool {
         let nlp = &mut (*(user_data as *mut Ipopt<P>)).nlp_interface;
-        nlp.constraint_uninit(
-            slice::from_raw_parts(x, n as usize),
-            new_x != 0,
-            uninit_from_raw_mut(g, m as usize),
+        initialized_output_for_buffer(
+            nlp.constraint_uninit(
+                slice::from_raw_parts(x, n as usize),
+                new_x != 0,
+                uninit_from_raw_mut(g, m as usize),
+            ),
+            g,
+            m as usize,
         )
         .is_some() as Bool
     }
@@ -1495,10 +1524,14 @@ impl<P: ConstrainedProblem> Ipopt<P> {
             ) as Bool
         } else {
             /* return the values of the Jacobian of the constraints */
-            nlp.constraint_jacobian_values_uninit(
-                slice::from_raw_parts(x, n as usize),
-                new_x != 0,
-                uninit_from_raw_mut(values, nele_jac as usize),
+            initialized_output_for_buffer(
+                nlp.constraint_jacobian_values_uninit(
+                    slice::from_raw_parts(x, n as usize),
+                    new_x != 0,
+                    uninit_from_raw_mut(values, nele_jac as usize),
+                ),
+                values,
+                nele_jac as usize,
             )
             .is_some() as Bool
         }
@@ -1530,12 +1563,16 @@ impl<P: ConstrainedProblem> Ipopt<P> {
             ) as Bool
         } else {
             /* return the values. */
-            nlp.hessian_values_uninit(
-                slice::from_raw_parts(x, n as usize),
-                new_x != 0,
-                obj_factor,
-                from_raw_parts_or_empty(lambda, m as usize),
-                uninit_from_raw_mut(values, nele_hess as usize),
+            initialized_output_for_buffer(
+                nlp.hessian_values_uninit(
+                    slice::from_raw_parts(x, n as usize),
+                    new_x != 0,
+                    obj_factor,
+                    from_raw_parts_or_empty(lambda, m as usize),
+                    uninit_from_raw_mut(values, nele_hess as usize),
+                ),
+                values,
+                nele_hess as usize,
             )
             .is_some() as Bool
         }
@@ -2278,5 +2315,35 @@ mod tests {
         // SAFETY: len 0 => an empty slice is returned without dereferencing the null pointer.
         let s = unsafe { uninit_from_raw_mut::<Number>(std::ptr::null_mut(), 0) };
         assert!(s.is_empty());
+    }
+
+    #[test]
+    fn initialized_output_must_cover_the_original_buffer() {
+        let mut buf = [MaybeUninit::<Number>::uninit(); 3];
+        let ptr = buf.as_mut_ptr() as *mut Number;
+        let initialized = buf.init_from_fn(|i| i as Number);
+        assert!(initialized_output_for_buffer(Some(initialized), ptr, 3).is_some());
+
+        let mut buf = [MaybeUninit::<Number>::uninit(); 3];
+        let ptr = buf.as_mut_ptr() as *mut Number;
+        let initialized_prefix = buf[..2].init_from_fn(|i| i as Number);
+        assert!(initialized_output_for_buffer(Some(initialized_prefix), ptr, 3).is_none());
+
+        let mut buf = [MaybeUninit::<Number>::uninit(); 3];
+        let ptr = buf.as_mut_ptr() as *mut Number;
+        let initialized_empty = buf[..0].init_from_fn(|_| 0.0);
+        assert!(initialized_output_for_buffer(Some(initialized_empty), ptr, 3).is_none());
+
+        let mut original = [MaybeUninit::<Number>::uninit(); 3];
+        let original_ptr = original.as_mut_ptr() as *mut Number;
+        let mut other = [MaybeUninit::<Number>::uninit(); 3];
+        let initialized_other = other.init_from_fn(|i| i as Number);
+        assert!(initialized_output_for_buffer(Some(initialized_other), original_ptr, 3).is_none());
+    }
+
+    #[test]
+    fn initialized_empty_output_does_not_require_matching_pointer() {
+        let initialized = Some(&mut [] as &mut [Number]);
+        assert!(initialized_output_for_buffer(initialized, std::ptr::null_mut(), 0).is_some());
     }
 }
