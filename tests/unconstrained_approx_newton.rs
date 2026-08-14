@@ -28,8 +28,9 @@ struct NLP {
 }
 
 impl NLP {
-    fn count_iterations_cb(&mut self, data: IntermediateCallbackData) -> bool {
+    fn count_iterations_cb(&mut self, data: IntermediateCallbackData<'_>) -> bool {
         self.iterations = data.iter_count as usize;
+        assert_eq!(data.x.len(), 2);
         true
     }
 

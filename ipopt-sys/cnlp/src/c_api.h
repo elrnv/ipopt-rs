@@ -169,7 +169,8 @@ extern "C"
             CNLP_Number mu, CNLP_Number d_norm,
             CNLP_Number regularization_size,
             CNLP_Number alpha_du, CNLP_Number alpha_pr,
-            CNLP_Index ls_trials, CNLP_UserDataPtr user_data);
+            CNLP_Index ls_trials, CNLP_Index x_count,
+            const CNLP_Number* x, CNLP_UserDataPtr user_data);
 
     /** Enum reporting the status of problem creation */
     enum CNLP_CreateProblemStatus {
