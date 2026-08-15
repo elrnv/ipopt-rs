@@ -1348,11 +1348,8 @@ impl<P: NewtonProblem> Ipopt<P> {
             if let Some(vals) = init {
                 // This problem has no constraints so we can multiply each entry by the
                 // objective factor.
-                let start_idx = nlp.indexing_style() as usize;
-                if let Some(tail) = vals.get_mut(start_idx..) {
-                    for v in tail {
-                        *v *= obj_factor;
-                    }
+                for v in vals {
+                    *v *= obj_factor;
                 }
             }
             result
@@ -2076,6 +2073,84 @@ mod tests {
             Ipopt::new_unconstrained(nlp4).unwrap_err(),
             CreateError::NoOptimizationVariablesSpecified
         );
+    }
+
+    struct FortranNewton;
+
+    impl BasicProblem for FortranNewton {
+        fn indexing_style(&self) -> IndexingStyle {
+            IndexingStyle::FortranStyle
+        }
+
+        fn num_variables(&self) -> usize {
+            1
+        }
+
+        fn bounds(&self, _: &mut [Number], _: &mut [Number]) -> bool {
+            true
+        }
+
+        fn initial_point(&self, _: &mut [Number]) -> bool {
+            true
+        }
+
+        fn objective(&self, _: &[Number], _: bool, _: &mut Number) -> bool {
+            true
+        }
+
+        fn objective_grad(&self, _: &[Number], _: bool, _: &mut [Number]) -> bool {
+            true
+        }
+    }
+
+    impl NewtonProblem for FortranNewton {
+        fn num_hessian_non_zeros(&self) -> usize {
+            2
+        }
+
+        fn hessian_indices(&self, _: &mut [Index], _: &mut [Index]) -> bool {
+            true
+        }
+
+        fn hessian_values(&self, _: &[Number], vals: &mut [Number]) -> bool {
+            vals.copy_from_slice(&[2.0, 3.0]);
+            true
+        }
+    }
+
+    #[test]
+    fn newton_hessian_scales_every_value_with_fortran_indexing() {
+        let mut ipopt = Ipopt {
+            nlp_internal: std::ptr::null_mut(),
+            nlp_interface: FortranNewton,
+            intermediate_callback: None,
+            num_primal_variables: 1,
+            num_dual_variables: 0,
+        };
+        let user_data = &mut ipopt as *mut Ipopt<FortranNewton> as ffi::CNLP_UserDataPtr;
+        let x = [0.0];
+        let mut values = [0.0; 2];
+
+        // SAFETY: `x`, `values`, and `user_data` point to valid objects of the supplied lengths.
+        let result = unsafe {
+            Ipopt::<FortranNewton>::eval_h(
+                1,
+                x.as_ptr(),
+                1 as Bool,
+                4.0,
+                0,
+                std::ptr::null(),
+                0 as Bool,
+                2,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                values.as_mut_ptr(),
+                user_data,
+            )
+        };
+
+        assert_eq!(result, true as Bool);
+        assert_eq!(values, [8.0, 12.0]);
     }
 
     #[derive(Debug, Clone)]
