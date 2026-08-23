@@ -455,8 +455,13 @@ mod tests {
         _alpha_du: CNLP_Number,
         _alpha_pr: CNLP_Number,
         _ls_trials: CNLP_Index,
+        x_count: CNLP_Index,
+        x: *const CNLP_Number,
         _user_data: CNLP_UserDataPtr,
     ) -> CNLP_Bool {
+        let x = unsafe { slice::from_raw_parts(x, x_count as usize) };
+        assert_eq!(x.len(), 4);
+        assert!(x.iter().all(|value| value.is_finite()));
         (inf_pr >= 1e-4) as CNLP_Bool
     }
 }

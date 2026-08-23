@@ -124,6 +124,12 @@ fn init_logger() {
 
 fn main() {
     init_logger();
+    println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=cnlp/CMakeLists.txt");
+    println!("cargo:rerun-if-changed=cnlp/src/c_api.cpp");
+    println!("cargo:rerun-if-changed=cnlp/src/c_api.h");
+    println!("cargo:rerun-if-changed=cnlp/src/nlp.cpp");
+    println!("cargo:rerun-if-changed=cnlp/src/nlp.hpp");
 
     let mut msg = String::from("\n\n");
 
