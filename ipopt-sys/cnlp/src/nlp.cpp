@@ -1,6 +1,6 @@
 #include "nlp.hpp"
-#include <coin/IpIpoptApplication.hpp>
-#include <coin/IpBlas.hpp>
+#include <IpIpoptApplication.hpp>
+#include <IpBlas.hpp>
 
 #include <algorithm>
 
@@ -349,11 +349,11 @@ void CNLP_Problem::finalize_solution(
     DBG_ASSERT(m_g_sol.size() == m);
     DBG_ASSERT(m_lambda_sol.size() == m);
 
-    Ipopt::IpBlasDcopy(n, x, 1, m_x_sol.data(), 1);
-    Ipopt::IpBlasDcopy(n, z_L, 1, m_z_L_sol.data(), 1);
-    Ipopt::IpBlasDcopy(n, z_U, 1, m_z_U_sol.data(), 1);
-    Ipopt::IpBlasDcopy(m, g, 1, m_g_sol.data(), 1);
-    Ipopt::IpBlasDcopy(m, lambda, 1, m_lambda_sol.data(), 1);
+    std::copy_n(x, n, m_x_sol.data());
+    std::copy_n(z_L, n, m_z_L_sol.data());
+    std::copy_n(z_U, n, m_z_U_sol.data());
+    std::copy_n(g, m, m_g_sol.data());
+    std::copy_n(lambda, m, m_lambda_sol.data());
     m_obj_sol = obj_value;
     // don't need to store the status, we get the status from the OptimizeTNLP method
 }

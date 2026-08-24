@@ -1,0 +1,36 @@
+name: Windows
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install Ipopt
+        shell: pwsh
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP 'ipopt.zip'
+          $root = Join-Path $env:RUNNER_TEMP 'ipopt'
+          Invoke-WebRequest `
+            -Uri 'https://github.com/coin-or/Ipopt/releases/download/releases%2F3.13.3/Ipopt-3.13.3-win64-msvs2019-md.zip' `
+            -OutFile $archive
+          Expand-Archive -LiteralPath $archive -DestinationPath $root -Force
+          $install = Get-ChildItem -LiteralPath $root -Directory | Select-Object -First 1
+          "IPOPT_DIR=$($install.FullName)" >> $env:GITHUB_ENV
+          "$($install.FullName)\bin" >> $env:GITHUB_PATH
+
+      - name: Configure LLVM
+        shell: pwsh
+        run: |
+          $clang = (Get-Command clang.exe).Source
+          "LIBCLANG_PATH=$(Split-Path -Parent $clang)" >> $env:GITHUB_ENV
+
+      - name: Test
+        run: cargo test --all --verbose

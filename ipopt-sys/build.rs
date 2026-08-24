@@ -13,7 +13,9 @@
 //   limitations under the License.
 
 use curl::easy::Easy;
+#[cfg(not(target_os = "windows"))]
 use flate2::read::GzDecoder;
+#[cfg(not(target_os = "windows"))]
 use lazy_static::lazy_static;
 use log::*;
 use serde::{Deserialize, Serialize};
@@ -37,28 +39,44 @@ use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
+#[cfg(not(target_os = "windows"))]
 use std::process::Command;
 use std::{env, fs};
+#[cfg(not(target_os = "windows"))]
 use tar::Archive;
 
+#[cfg(not(target_os = "windows"))]
 const LIBRARY: &str = "ipopt";
+#[cfg(not(target_os = "windows"))]
 const SOURCE_URL: &str = "https://github.com/coin-or/Ipopt/archive/releases/";
 const VERSION: &str = "3.12.13";
+#[cfg(not(target_os = "windows"))]
 const MIN_VERSION: &str = "3.11.9";
+#[cfg(not(target_os = "windows"))]
 const BINARY_DL_URL: &str = "https://github.com/JuliaOpt/IpoptBuilder/releases/download/";
 // hashes For 3.13.0:
 //const SOURCE_MD5: &str = "e6a8d1626b38a816b3ea381b85dfabb6";
 //const SOURCE_SHA1: &str = "73c427ce4cae1081f2b3fd9007fba3180c3c6f9d";
+#[cfg(not(target_os = "windows"))]
 const SOURCE_MD5: &str = "9c054d4a4ce1b012a8ca168d9cbef6c6";
+#[cfg(not(target_os = "windows"))]
 const SOURCE_SHA1: &str = "decf7e30acceb7cd80b6cd582ab6ea6c924ac6f9";
 
+#[cfg(not(target_os = "windows"))]
 const MUMPS_VERSION: &str = "1.6.2";
+#[cfg(not(target_os = "windows"))]
 const MUMPS_URL: &str = "https://github.com/coin-or-tools/ThirdParty-Mumps/archive/releases/";
+#[cfg(not(target_os = "windows"))]
 const MUMPS_MD5: &str = "22cb30f1f79489095d290e6a27832c0e";
+#[cfg(not(target_os = "windows"))]
 const MUMPS_SHA1: &str = "bd4c8d3f941940c509c76e9420e1523c24b3ae99";
+#[cfg(not(target_os = "windows"))]
 const METIS_VERSION: &str = "1.3.9";
+#[cfg(not(target_os = "windows"))]
 const METIS_URL: &str = "https://github.com/coin-or-tools/ThirdParty-Metis/archive/releases/";
+#[cfg(not(target_os = "windows"))]
 const METIS_MD5: &str = "1811597f87787dcf996c0ae41f4416c9";
+#[cfg(not(target_os = "windows"))]
 const METIS_SHA1: &str = "a2cc549be601bc78543e5cf5f21ee1438a66fd24";
 
 #[cfg(target_os = "macos")]
@@ -90,18 +108,16 @@ mod family {
 
 #[cfg(target_os = "windows")]
 mod platform {
-    pub static BUILD_FLAGS: [&str; 1] = [""];
-    pub static LIB_EXT: &str = "dll";
-    pub static DYNAMIC_LIB_EXT: &str = "dll";
-    pub static BINARY_SUFFIX: &str = "x86_64-w64-mingw32-gcc8.tar.gz";
+    pub static WINDOWS_BINARY_URL: &str =
+        "https://github.com/coin-or/Ipopt/releases/download/releases%2F3.13.3/Ipopt-3.13.3-win64-msvs2019-md.zip";
+    pub static WINDOWS_BINARY_NAME: &str = "Ipopt-3.13.3-win64-msvs2019-md";
 }
 
-#[cfg(target_os = "windows")]
-mod family {}
-
+#[cfg(target_family = "unix")]
 use crate::family::*;
 use crate::platform::*;
 
+#[cfg(not(target_os = "windows"))]
 lazy_static! {
     static ref BINARY_NAME: String = format!(
         "IpoptBuilder.v{ver}.{suffix}",
@@ -124,10 +140,32 @@ fn init_logger() {
 
 fn main() {
     init_logger();
+    println!("cargo:rerun-if-env-changed=IPOPT_DIR");
+    println!("cargo:rerun-if-changed=cnlp/CMakeLists.txt");
+    println!("cargo:rerun-if-changed=cnlp/src/c_api.cpp");
+    println!("cargo:rerun-if-changed=cnlp/src/c_api.h");
+    println!("cargo:rerun-if-changed=cnlp/src/nlp.cpp");
+    println!("cargo:rerun-if-changed=cnlp/src/nlp.hpp");
 
     let mut msg = String::from("\n\n");
 
-    // Try to find Ipopt preinstalled.
+    #[cfg(target_os = "windows")]
+    match try_windows_install() {
+        Ok(link_info) => {
+            link(build_cnlp(&link_info.include_paths), link_info)
+                .expect("Failed to create bindings for Ipopt library.");
+            return;
+        }
+        Err(err) => {
+            msg.push_str(&format!(
+                "Failed to find Ipopt using IPOPT_DIR: {:?}\n\n",
+                err
+            ));
+        }
+    }
+
+    // Try to find Ipopt preinstalled on Unix systems.
+    #[cfg(not(target_os = "windows"))]
     match try_pkg_config() {
         Ok(link_info) => {
             link(build_cnlp(&link_info.include_paths), link_info)
@@ -144,6 +182,7 @@ fn main() {
 
     // Check if Ipopt has been installed as a local system lib, but for some reason pkg-config is
     // missing.
+    #[cfg(not(target_os = "windows"))]
     match try_system_install() {
         Ok(link_info) => {
             link(build_cnlp(&link_info.include_paths), link_info)
@@ -158,6 +197,7 @@ fn main() {
         }
     }
 
+    #[cfg(not(target_os = "windows"))]
     match build_and_install_ipopt() {
         Ok(link_info) => {
             link(build_cnlp(&link_info.include_paths), link_info)
@@ -189,12 +229,19 @@ fn main() {
 #[derive(Clone, Debug, PartialEq)]
 enum Error {
     SystemLibNotFound,
+    #[cfg(not(target_os = "windows"))]
     PkgConfigNotFound,
+    #[cfg(not(target_os = "windows"))]
     MKLInstallNotFound,
-    DownloadFailure { response_code: u32, url: String },
+    DownloadFailure {
+        response_code: u32,
+        url: String,
+    },
     UrlFailure,
+    #[cfg(not(target_os = "windows"))]
     UnsupportedPlatform,
     IOError,
+    #[cfg(not(target_os = "windows"))]
     HashMismatch,
 }
 
@@ -213,14 +260,9 @@ impl From<curl::Error> for Error {
 // The following convenience functions produce the correct library filename for the corresponding
 // platform when downloading the binaries. We always download dynamic libs.
 
+#[cfg(not(target_os = "windows"))]
 fn library_name() -> String {
     format!("lib{}.{}", LIBRARY, DYNAMIC_LIB_EXT)
-}
-
-#[cfg(target_family = "windows")]
-fn versioned_library_name() -> String {
-    // No versioning in filenames on Windows.
-    format!("lib{}.{}", LIBRARY, LIB_EXT)
 }
 
 #[cfg(target_family = "unix")]
@@ -247,7 +289,54 @@ fn major_versioned_library_name() -> String {
     }
 }
 
+#[cfg(target_os = "windows")]
+fn ipopt_header_path(root: &Path) -> Option<PathBuf> {
+    [
+        root.join("include")
+            .join("coin")
+            .join("IpIpoptApplication.hpp"),
+        root.join("include")
+            .join("coin-or")
+            .join("IpIpoptApplication.hpp"),
+        root.join("include").join("IpIpoptApplication.hpp"),
+    ]
+    .iter()
+    .find(|path| path.exists())
+    .cloned()
+}
+
+#[cfg(target_os = "windows")]
+fn try_windows_install() -> Result<LinkInfo, Error> {
+    let root = env::var_os("IPOPT_DIR")
+        .map(PathBuf::from)
+        .ok_or(Error::SystemLibNotFound)?;
+    let _header = ipopt_header_path(&root).ok_or(Error::SystemLibNotFound)?;
+    let lib_dir = root.join("lib");
+    let import_libraries = [lib_dir.join("ipopt.dll.lib"), lib_dir.join("ipopt.lib")];
+    let import_library = import_libraries
+        .iter()
+        .find(|path| path.exists())
+        .ok_or(Error::SystemLibNotFound)?;
+
+    let include_dir = root.join("include");
+
+    info!(
+        "Using Ipopt installation at {} with import library {}",
+        root.display(),
+        import_library.display()
+    );
+
+    save_link_info(&LinkInfo {
+        libs: vec![(LibKind::Dynamic, "ipopt".to_string())],
+        search_paths: vec![stage_windows_import_library(import_library)?, lib_dir],
+        include_paths: vec![include_dir],
+    })?;
+
+    Ok(load_link_info()?)
+}
+
 // Try to find ipopt install path from pkg_config.
+#[cfg(not(target_os = "windows"))]
 fn try_pkg_config() -> Result<LinkInfo, Error> {
     match pkg_config::Config::new()
         .atleast_version(MIN_VERSION)
@@ -276,6 +365,7 @@ fn try_pkg_config() -> Result<LinkInfo, Error> {
 }
 
 // A vector of system lib/include path pairs to search for libraries in.
+#[cfg(not(target_os = "windows"))]
 fn system_install_paths() -> Vec<(PathBuf, PathBuf)> {
     vec![
         ("/usr/lib", "/usr/include"),
@@ -288,6 +378,7 @@ fn system_install_paths() -> Vec<(PathBuf, PathBuf)> {
 }
 
 // Just check system libs. There may be something there.
+#[cfg(not(target_os = "windows"))]
 fn try_system_install() -> Result<LinkInfo, Error> {
     // Check standard prefixes
     for (lib, include) in system_install_paths().into_iter() {
@@ -311,6 +402,7 @@ fn try_system_install() -> Result<LinkInfo, Error> {
 }
 
 /// Download the ipopt prebuilt binary from JuliaOpt and install it.
+#[cfg(not(target_os = "windows"))]
 fn download_and_install_prebuilt_binary() -> Result<LinkInfo, Error> {
     info!("Download and install prebuilt Ipopt binary");
 
@@ -416,6 +508,182 @@ fn download_and_install_prebuilt_binary() -> Result<LinkInfo, Error> {
     Ok(link_info)
 }
 
+#[cfg(target_os = "windows")]
+fn download_and_install_prebuilt_binary() -> Result<LinkInfo, Error> {
+    info!("Download and install the official MSVC Ipopt binary");
+
+    let crate_dir = PathBuf::from(&env::var("CARGO_MANIFEST_DIR").unwrap());
+    let download_dir = crate_dir
+        .join("target")
+        .join(format!("ipopt-{}-binaries", VERSION));
+    fs::create_dir_all(&download_dir)?;
+
+    let archive_path = download_dir.join("Ipopt-3.13.3-win64-msvs2019-md.zip");
+    if !archive_path.exists() {
+        download_file(&archive_path, WINDOWS_BINARY_URL)?;
+    }
+
+    let unpacked_dir = download_dir.join(WINDOWS_BINARY_NAME);
+    if !unpacked_dir.exists() {
+        extract_zip(&archive_path, &download_dir)?;
+    }
+
+    let source_root = if unpacked_dir.exists() {
+        unpacked_dir
+    } else {
+        download_dir.clone()
+    };
+    let source_include = find_directory(&source_root, "include").ok_or(Error::SystemLibNotFound)?;
+    let source_lib = find_file(&source_root, "ipopt.dll.lib")
+        .or_else(|| find_file(&source_root, "ipopt.lib"))
+        .ok_or(Error::SystemLibNotFound)?;
+    let source_dll = find_file(&source_root, "ipopt.dll")
+        .or_else(|| find_file(&source_root, "ipopt-3.dll"))
+        .ok_or(Error::SystemLibNotFound)?;
+
+    let install_dir = PathBuf::from(&env::var("OUT_DIR").unwrap());
+    let install_include = install_dir.join("include");
+    let install_lib = install_dir.join("lib");
+    let install_bin = install_dir.join("bin");
+    fs::create_dir_all(&install_include)?;
+    fs::create_dir_all(&install_lib)?;
+    fs::create_dir_all(&install_bin)?;
+    copy_directory_contents(&source_include, &install_include)?;
+    fs::copy(&source_lib, install_lib.join("ipopt.lib"))?;
+    fs::copy(&source_dll, install_bin.join("ipopt.dll"))?;
+
+    // Cargo does not add a DLL's directory to the Windows loader search path.
+    // Put the downloaded runtime beside debug/test executables as a convenience,
+    // installed Ipopt distributions still use IPOPT_DIR/bin on PATH.
+    copy_runtime_to_profile(&source_dll)?;
+
+    let link_info = LinkInfo {
+        libs: vec![(LibKind::Dynamic, "ipopt".to_string())],
+        search_paths: vec![install_lib],
+        include_paths: vec![install_dir.join("include")],
+    };
+    save_link_info(&link_info)?;
+    Ok(link_info)
+}
+
+#[cfg(target_os = "windows")]
+fn stage_windows_import_library(source: &Path) -> Result<PathBuf, Error> {
+    let destination_dir = PathBuf::from(&env::var("OUT_DIR").unwrap()).join("lib");
+    fs::create_dir_all(&destination_dir)?;
+    fs::copy(source, destination_dir.join("ipopt.lib"))?;
+    Ok(destination_dir)
+}
+
+#[cfg(target_os = "windows")]
+fn download_file(path: &Path, url: &str) -> Result<(), Error> {
+    let file = File::create(path)?;
+    let mut writer = BufWriter::new(file);
+    let mut easy = Easy::new();
+    easy.follow_location(true)?;
+    easy.url(url).map_err(|_| Error::UrlFailure)?;
+    easy.write_function(move |data| {
+        writer
+            .write_all(data)
+            .map(|_| data.len())
+            .map_err(|_| curl::easy::WriteError::Pause)
+    })
+    .map_err(|_| Error::UrlFailure)?;
+    easy.perform().map_err(|_| Error::UrlFailure)?;
+    if easy.response_code().map_err(|_| Error::UrlFailure)? != 200 {
+        return Err(Error::DownloadFailure {
+            response_code: easy.response_code().unwrap_or_default(),
+            url: url.to_string(),
+        });
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn extract_zip(archive_path: &Path, destination: &Path) -> Result<(), Error> {
+    let file = File::open(archive_path)?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|_| Error::IOError)?;
+    for index in 0..archive.len() {
+        let mut entry = archive.by_index(index).map_err(|_| Error::IOError)?;
+        let relative = entry.mangled_name();
+        let output = destination.join(relative);
+        if entry.is_dir() {
+            fs::create_dir_all(&output)?;
+        } else {
+            if let Some(parent) = output.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            let mut file = File::create(output)?;
+            std::io::copy(&mut entry, &mut file)?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn find_file(root: &Path, name: &str) -> Option<PathBuf> {
+    let entries = fs::read_dir(root).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.file_name().and_then(|value| value.to_str()) == Some(name) {
+            return Some(path);
+        }
+        if path.is_dir() {
+            if let Some(found) = find_file(&path, name) {
+                return Some(found);
+            }
+        }
+    }
+    None
+}
+
+#[cfg(target_os = "windows")]
+fn find_directory(root: &Path, name: &str) -> Option<PathBuf> {
+    let entries = fs::read_dir(root).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() && path.file_name().and_then(|value| value.to_str()) == Some(name) {
+            return Some(path);
+        }
+        if path.is_dir() {
+            if let Some(found) = find_directory(&path, name) {
+                return Some(found);
+            }
+        }
+    }
+    None
+}
+
+#[cfg(target_os = "windows")]
+fn copy_directory_contents(source: &Path, destination: &Path) -> Result<(), Error> {
+    for entry in fs::read_dir(source)? {
+        let entry = entry?;
+        let source_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+        if source_path.is_dir() {
+            fs::create_dir_all(&destination_path)?;
+            copy_directory_contents(&source_path, &destination_path)?;
+        } else {
+            fs::copy(source_path, destination_path)?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn copy_runtime_to_profile(source_dll: &Path) -> Result<(), Error> {
+    let out_dir = PathBuf::from(&env::var("OUT_DIR").unwrap());
+    let profile_dir = out_dir
+        .parent()
+        .and_then(Path::parent)
+        .and_then(Path::parent)
+        .ok_or(Error::SystemLibNotFound)?;
+    fs::copy(source_dll, profile_dir.join("ipopt.dll"))?;
+    let deps_dir = profile_dir.join("deps");
+    fs::create_dir_all(&deps_dir)?;
+    fs::copy(source_dll, deps_dir.join("ipopt.dll"))?;
+    Ok(())
+}
+
 fn link_info_path() -> PathBuf {
     let output = PathBuf::from(&env::var("OUT_DIR").unwrap());
     output.join("ipopt_config.json")
@@ -440,6 +708,7 @@ fn load_link_info() -> Result<LinkInfo, Error> {
     Ok(serde_json::from_str(&info).expect("Failed to deserialize link info."))
 }
 
+#[cfg(not(target_os = "windows"))]
 fn check_tarball_hashes(tarball_path: &Path, md5: &str, sha1: &str) -> Result<(), Error> {
     use md5::{Digest, Md5};
     use sha1::Sha1;
@@ -473,11 +742,11 @@ fn check_tarball_hashes(tarball_path: &Path, md5: &str, sha1: &str) -> Result<()
 
 /// Build the CNLP interface.
 fn build_cnlp(ipopt_include_paths: &[PathBuf]) -> PathBuf {
-    let mut ipopt_include_dirs = String::new();
-    for path in ipopt_include_paths.iter() {
-        ipopt_include_dirs.push_str(path.to_str().unwrap());
-        ipopt_include_dirs.push(' ');
-    }
+    let ipopt_include_dirs = ipopt_include_paths
+        .iter()
+        .map(|path| path.to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join(";");
     cmake::Config::new("cnlp")
         .define("Ipopt_INCLUDE_DIRS:STRING", ipopt_include_dirs)
         .build()
@@ -509,7 +778,7 @@ fn link(cnlp_install_path: PathBuf, link_info: LinkInfo) -> Result<(), Error> {
     // Add the C++ standard lib for linking against CNLP.
     if cfg!(target_os = "macos") {
         println!("cargo:rustc-link-lib=dylib=c++");
-    } else {
+    } else if !cfg!(target_os = "windows") {
         println!("cargo:rustc-link-lib=dylib=stdc++");
     }
 
@@ -530,6 +799,7 @@ fn link(cnlp_install_path: PathBuf, link_info: LinkInfo) -> Result<(), Error> {
 }
 
 /// Download a tarball if it doesn't already exist.
+#[cfg(not(target_os = "windows"))]
 fn download_tarball(
     tarball_path: &Path,
     binary_url: &str,
@@ -564,6 +834,7 @@ fn download_tarball(
 }
 
 /// Build Ipopt statically linked to MKL if possible. Return the path to the ipopt library.
+#[cfg(not(target_os = "windows"))]
 fn build_and_install_ipopt() -> Result<LinkInfo, Error> {
     // Compile ipopt from source
     // Build URL to download from
@@ -664,6 +935,7 @@ struct LinkInfo {
 }
 
 // Build Ipopt static lib with MKL in the current directory.
+#[cfg(not(target_os = "windows"))]
 fn build_with_mkl(install_dir: &Path, debug: bool) -> Result<LinkInfo, Error> {
     let mkl_libs = ["mkl_intel_lp64", "mkl_tbb_thread", "mkl_core"];
 
@@ -838,6 +1110,7 @@ fn build_with_mkl(install_dir: &Path, debug: bool) -> Result<LinkInfo, Error> {
     })
 }
 
+#[cfg(not(target_os = "windows"))]
 fn check_pkg_config_lib_type(lib_name: &str, lib: &pkg_config::Library) -> LibKind {
     let mut lib_type = LibKind::Dynamic;
 
@@ -857,6 +1130,7 @@ fn check_pkg_config_lib_type(lib_name: &str, lib: &pkg_config::Library) -> LibKi
 // TODO: This should be handled with an external *-sys crate.
 // library is the name of the library to search for and header is an associated header to determine
 // that the include path is also valid.
+#[cfg(not(target_os = "windows"))]
 fn find_linux_lib(library: &str, header: &str) -> Result<LinkInfo, Error> {
     // Try with pkg-config
     if let Ok(lib) = pkg_config::Config::new()
@@ -910,6 +1184,7 @@ fn find_linux_lib(library: &str, header: &str) -> Result<LinkInfo, Error> {
     Err(Error::SystemLibNotFound)
 }
 
+#[cfg(not(target_os = "windows"))]
 fn download_and_unpack_thirdparty(
     third_party: &Path,
     name: &str,
@@ -950,6 +1225,7 @@ fn download_and_unpack_thirdparty(
 }
 
 // Build Ipopt static lib with Default libs.
+#[cfg(not(target_os = "windows"))]
 fn build_with_default_blas(install_dir: &Path, debug: bool) -> Result<LinkInfo, Error> {
     let build_dir = env::current_dir().unwrap();
     let root_dir = build_dir.parent().unwrap().parent().unwrap();
@@ -1064,6 +1340,7 @@ fn build_with_default_blas(install_dir: &Path, debug: bool) -> Result<LinkInfo, 
     })
 }
 
+#[cfg(not(target_os = "windows"))]
 fn remove_suffix(value: &mut String, suffix: &str) {
     if value.ends_with(suffix) {
         let n = value.len();
@@ -1071,6 +1348,7 @@ fn remove_suffix(value: &mut String, suffix: &str) {
     }
 }
 
+#[cfg(not(target_os = "windows"))]
 fn extract_tarball<P: AsRef<Path> + std::fmt::Debug, P2: AsRef<Path> + std::fmt::Debug>(
     archive_path: P,
     extract_to: P2,
@@ -1085,6 +1363,7 @@ fn extract_tarball<P: AsRef<Path> + std::fmt::Debug, P2: AsRef<Path> + std::fmt:
     a.unpack(extract_to).unwrap();
 }
 
+#[cfg(not(target_os = "windows"))]
 fn run<F>(name: &str, mut configure: F)
 where
     F: FnMut(&mut Command) -> &mut Command,

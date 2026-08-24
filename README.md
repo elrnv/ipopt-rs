@@ -105,9 +105,9 @@ See the tests for more examples including constrained optimization.
 
 # Getting Ipopt Binaries
 
-As it stands, this library is still immature in terms of platform support. There is ongoing work to
-improve this. For instance Windows is not currently supported until I get a Windows machine or
-somebody else pitches in to provide the support ;)
+Linux, macOS, and 64-bit Windows (MSVC) are supported. On Windows, set `IPOPT_DIR` to an Ipopt
+installation. If it is not set, `ipopt-sys` downloads a compatible official Ipopt Windows package
+during the build.
 
 For details on how Ipopt binaries are acquired see [ipopt-sys](ipopt-sys).
 
