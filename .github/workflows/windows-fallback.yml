@@ -29,4 +29,12 @@ jobs:
           if (Test-Path Env:IPOPT_DIR) {
             throw 'IPOPT_DIR must not be set in the fallback test'
           }
-          cargo test --all --verbose
+          $log = Join-Path $env:RUNNER_TEMP 'fallback-cargo-test.log'
+          cargo test --all --verbose 2>&1 | Tee-Object -FilePath $log
+          $status = $LASTEXITCODE
+          if ($status -ne 0) {
+            $tail = (Get-Content -LiteralPath $log | Select-Object -Last 40) -join "`n"
+            $escaped = $tail.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Output "::error title=Fallback cargo test failed::$escaped"
+          }
+          exit $status
