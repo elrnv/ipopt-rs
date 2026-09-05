@@ -1,0 +1,32 @@
+name: Windows fallback prototype
+
+on:
+  push:
+    branches:
+      - codex/pr23-fallback-ci
+  workflow_dispatch:
+
+jobs:
+  fallback:
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure LLVM
+        shell: pwsh
+        run: |
+          $clang = (Get-Command clang.exe).Source
+          "LIBCLANG_PATH=$(Split-Path -Parent $clang)" >> $env:GITHUB_ENV
+
+      - name: Test automatic Ipopt download
+        shell: pwsh
+        run: |
+          Remove-Item Env:IPOPT_DIR -ErrorAction SilentlyContinue
+          if (Test-Path Env:IPOPT_DIR) {
+            throw 'IPOPT_DIR must not be set in the fallback test'
+          }
+          cargo test --all --verbose
