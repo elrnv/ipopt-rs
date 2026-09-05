@@ -22,19 +22,17 @@ jobs:
           $clang = (Get-Command clang.exe).Source
           "LIBCLANG_PATH=$(Split-Path -Parent $clang)" >> $env:GITHUB_ENV
 
-      - name: Test automatic Ipopt download
+      - name: Build tests via automatic Ipopt download
         shell: pwsh
         run: |
           Remove-Item Env:IPOPT_DIR -ErrorAction SilentlyContinue
           if (Test-Path Env:IPOPT_DIR) {
             throw 'IPOPT_DIR must not be set in the fallback test'
           }
-          $log = Join-Path $env:RUNNER_TEMP 'fallback-cargo-test.log'
-          cargo test --all --verbose 2>&1 | Tee-Object -FilePath $log
-          $status = $LASTEXITCODE
-          if ($status -ne 0) {
-            $tail = (Get-Content -LiteralPath $log | Select-Object -Last 40) -join "`n"
-            $escaped = $tail.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
-            Write-Output "::error title=Fallback cargo test failed::$escaped"
-          }
-          exit $status
+          cargo test --all --no-run --verbose
+
+      - name: Run fallback-built tests
+        shell: pwsh
+        run: |
+          Remove-Item Env:IPOPT_DIR -ErrorAction SilentlyContinue
+          cargo test --all --verbose
