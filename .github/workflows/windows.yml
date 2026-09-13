@@ -6,7 +6,12 @@ on:
 
 jobs:
   test:
+    name: Test (${{ matrix.ipopt }})
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ipopt: [installed, fallback]
 
     steps:
       - uses: actions/checkout@v7
@@ -14,6 +19,7 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@v1
 
       - name: Install Ipopt
+        if: matrix.ipopt == 'installed'
         shell: pwsh
         run: |
           $archive = Join-Path $env:RUNNER_TEMP 'ipopt.zip'
