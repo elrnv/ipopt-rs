@@ -13,14 +13,12 @@
 //   limitations under the License.
 
 use curl::easy::Easy;
-#[cfg(not(target_os = "windows"))]
-use flate2::read::GzDecoder;
-#[cfg(not(target_os = "windows"))]
-use lazy_static::lazy_static;
 use log::*;
 use serde::{Deserialize, Serialize};
 #[cfg(target_os = "windows")]
 use sha2::{Digest, Sha256};
+#[cfg(not(target_os = "windows"))]
+use {flate2::read::GzDecoder, lazy_static::lazy_static, std::process::Command, tar::Archive};
 
 /**
  * # Goals
@@ -41,11 +39,7 @@ use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
-#[cfg(not(target_os = "windows"))]
-use std::process::Command;
 use std::{env, fs};
-#[cfg(not(target_os = "windows"))]
-use tar::Archive;
 
 #[cfg(not(target_os = "windows"))]
 const LIBRARY: &str = "ipopt";
