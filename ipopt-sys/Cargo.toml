@@ -33,4 +33,5 @@ md-5 = "0.10.6"
 sha1 = "0.10.6"
 
 [target.'cfg(windows)'.build-dependencies]
+sha2 = "0.11"
 zip = { version = "8.6", default-features = false, features = ["deflate"] }

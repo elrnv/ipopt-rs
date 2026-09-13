@@ -19,6 +19,8 @@ use flate2::read::GzDecoder;
 use lazy_static::lazy_static;
 use log::*;
 use serde::{Deserialize, Serialize};
+#[cfg(target_os = "windows")]
+use sha2::{Digest, Sha256};
 
 /**
  * # Goals
@@ -111,6 +113,8 @@ mod platform {
     pub static WINDOWS_BINARY_URL: &str =
         "https://github.com/coin-or/Ipopt/releases/download/releases%2F3.13.3/Ipopt-3.13.3-win64-msvs2019-md.zip";
     pub static WINDOWS_BINARY_NAME: &str = "Ipopt-3.13.3-win64-msvs2019-md";
+    pub static WINDOWS_BINARY_SHA256: &str =
+        "b7e54608ced9022d6700641f9a105be42f339c6b65a580a149bc62c18395a1ec";
 }
 
 #[cfg(target_family = "unix")]
@@ -241,7 +245,6 @@ enum Error {
     #[cfg(not(target_os = "windows"))]
     UnsupportedPlatform,
     IOError,
-    #[cfg(not(target_os = "windows"))]
     HashMismatch,
 }
 
@@ -519,9 +522,7 @@ fn download_and_install_prebuilt_binary() -> Result<LinkInfo, Error> {
     fs::create_dir_all(&download_dir)?;
 
     let archive_path = download_dir.join("Ipopt-3.13.3-win64-msvs2019-md.zip");
-    if !archive_path.exists() {
-        download_file(&archive_path, WINDOWS_BINARY_URL)?;
-    }
+    download_file(&archive_path, WINDOWS_BINARY_URL, WINDOWS_BINARY_SHA256)?;
 
     let unpacked_dir = download_dir.join(WINDOWS_BINARY_NAME);
     if !unpacked_dir.exists() {
@@ -576,7 +577,37 @@ fn stage_windows_import_library(source: &Path) -> Result<PathBuf, Error> {
 }
 
 #[cfg(target_os = "windows")]
-fn download_file(path: &Path, url: &str) -> Result<(), Error> {
+fn download_file(path: &Path, url: &str, sha256: &str) -> Result<(), Error> {
+    if check_sha256(path, sha256).is_ok() {
+        return Ok(());
+    }
+
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or(Error::IOError)?;
+    let temporary_path = path.with_file_name(format!("{file_name}.{}.tmp", std::process::id()));
+    if temporary_path.exists() {
+        fs::remove_file(&temporary_path)?;
+    }
+
+    let result = download_file_to_path(&temporary_path, url)
+        .and_then(|()| check_sha256(&temporary_path, sha256))
+        .and_then(|()| {
+            if path.exists() {
+                fs::remove_file(path)?;
+            }
+            fs::rename(&temporary_path, path)?;
+            Ok(())
+        });
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary_path);
+    }
+    result
+}
+
+#[cfg(target_os = "windows")]
+fn download_file_to_path(path: &Path, url: &str) -> Result<(), Error> {
     let file = File::create(path)?;
     let mut writer = BufWriter::new(file);
     let mut easy = Easy::new();
@@ -597,6 +628,32 @@ fn download_file(path: &Path, url: &str) -> Result<(), Error> {
         });
     }
     Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn check_sha256(path: &Path, expected: &str) -> Result<(), Error> {
+    use std::io::Read;
+
+    let mut file = File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0; 8192];
+    loop {
+        let length = file.read(&mut buffer)?;
+        if length == 0 {
+            break;
+        }
+        hasher.update(&buffer[..length]);
+    }
+    let actual = hasher
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    if actual.eq_ignore_ascii_case(expected) {
+        Ok(())
+    } else {
+        Err(Error::HashMismatch)
+    }
 }
 
 #[cfg(target_os = "windows")]
