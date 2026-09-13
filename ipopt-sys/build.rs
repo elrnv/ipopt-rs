@@ -540,6 +540,7 @@ fn download_and_install_prebuilt_binary() -> Result<LinkInfo, Error> {
     let source_dll = find_file(&source_root, "ipopt.dll")
         .or_else(|| find_file(&source_root, "ipopt-3.dll"))
         .ok_or(Error::SystemLibNotFound)?;
+    let source_bin = source_dll.parent().ok_or(Error::SystemLibNotFound)?;
 
     let install_dir = PathBuf::from(&env::var("OUT_DIR").unwrap());
     let install_include = install_dir.join("include");
@@ -550,12 +551,12 @@ fn download_and_install_prebuilt_binary() -> Result<LinkInfo, Error> {
     fs::create_dir_all(&install_bin)?;
     copy_directory_contents(&source_include, &install_include)?;
     fs::copy(&source_lib, install_lib.join("ipopt.lib"))?;
-    fs::copy(&source_dll, install_bin.join("ipopt.dll"))?;
+    copy_windows_runtime_dlls(source_bin, &install_bin)?;
 
     // Cargo does not add a DLL's directory to the Windows loader search path.
     // Put the downloaded runtime beside debug/test executables as a convenience,
     // installed Ipopt distributions still use IPOPT_DIR/bin on PATH.
-    copy_runtime_to_profile(&source_dll)?;
+    copy_runtime_to_profile(source_bin)?;
 
     let link_info = LinkInfo {
         libs: vec![(LibKind::Dynamic, "ipopt".to_string())],
@@ -670,17 +671,34 @@ fn copy_directory_contents(source: &Path, destination: &Path) -> Result<(), Erro
 }
 
 #[cfg(target_os = "windows")]
-fn copy_runtime_to_profile(source_dll: &Path) -> Result<(), Error> {
+fn copy_windows_runtime_dlls(source: &Path, destination: &Path) -> Result<(), Error> {
+    fs::create_dir_all(destination)?;
+    for entry in fs::read_dir(source)? {
+        let entry = entry?;
+        let source_path = entry.path();
+        if source_path.is_file()
+            && source_path
+                .extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("dll"))
+        {
+            fs::copy(source_path, destination.join(entry.file_name()))?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn copy_runtime_to_profile(source_bin: &Path) -> Result<(), Error> {
     let out_dir = PathBuf::from(&env::var("OUT_DIR").unwrap());
     let profile_dir = out_dir
         .parent()
         .and_then(Path::parent)
         .and_then(Path::parent)
         .ok_or(Error::SystemLibNotFound)?;
-    fs::copy(source_dll, profile_dir.join("ipopt.dll"))?;
+    copy_windows_runtime_dlls(source_bin, profile_dir)?;
     let deps_dir = profile_dir.join("deps");
-    fs::create_dir_all(&deps_dir)?;
-    fs::copy(source_dll, deps_dir.join("ipopt.dll"))?;
+    copy_windows_runtime_dlls(source_bin, &deps_dir)?;
     Ok(())
 }
 
