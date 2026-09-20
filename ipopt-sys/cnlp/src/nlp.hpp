@@ -3,16 +3,32 @@
 
 #include "c_api.h"
 
-#include <coin/IpUtils.hpp>
-#include <coin/IpTNLP.hpp>
-#include <coin/IpException.hpp>
-#include <coin/IpSmartPtr.hpp>
-#include <coin/IpIpoptApplication.hpp>
+#include <IpUtils.hpp>
+#include <IpTNLP.hpp>
+#include <IpException.hpp>
+#include <IpSmartPtr.hpp>
+#include <IpIpoptApplication.hpp>
 #include <vector>
 
-/** Declare excpetion that is thrown when invalid NLP data
-*  is provided */
-DECLARE_STD_EXCEPTION(INVALID_NLP);
+/** Exception thrown when invalid NLP data is provided.
+ *
+ * This is intentionally defined locally instead of using DECLARE_STD_EXCEPTION:
+ * that macro applies IPOPTLIB_EXPORT, which becomes dllimport on Windows and
+ * would make this shim look for the exception in ipopt.dll.
+ */
+class INVALID_NLP : public Ipopt::IpoptException
+{
+public:
+    INVALID_NLP(std::string msg, std::string fname, Ipopt::Index line)
+        : Ipopt::IpoptException(msg, fname, line, "INVALID_NLP") {}
+
+    INVALID_NLP(const INVALID_NLP& copy)
+        : Ipopt::IpoptException(copy) {}
+
+private:
+    INVALID_NLP();
+    void operator=(const INVALID_NLP&);
+};
 
 struct CNLP_Problem : public Ipopt::TNLP
 {

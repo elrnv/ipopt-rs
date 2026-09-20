@@ -35,8 +35,25 @@ Currently supported methods for getting the Ipopt library:
 
   4. Download a prebuilt dynamic Ipopt library from JuliaOpt.
 
-Each of these steps are at various levels of polish and currently tested on Linux and macOS systems
-only.
+The Unix source-build paths are tested on Linux and macOS. Windows support targets the MSVC Rust
+toolchain and uses an installed Ipopt package or the pinned official Windows binary fallback.
+
+### Windows (MSVC)
+
+Install the Visual Studio C++ build tools, CMake, and LLVM/libclang. Then either install Ipopt and
+set `IPOPT_DIR` to the directory containing its `include`, `lib`, and `bin` folders, or let the build
+download the official `Ipopt-3.13.3-win64-msvs2019-md` package automatically.
+
+For an installed package, PowerShell can be used as follows:
+
+```powershell
+$env:IPOPT_DIR = 'C:\path\to\Ipopt-3.13.3-win64-msvs2019-md'
+$env:PATH = "$env:IPOPT_DIR\bin;$env:PATH"
+cargo test
+```
+
+The `bin` directory must remain on `PATH` when running applications that dynamically link Ipopt.
+The automatic fallback copies its Ipopt DLL beside Cargo debug and test binaries.
 
 
 ### MacOS

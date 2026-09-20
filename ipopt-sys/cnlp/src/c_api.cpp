@@ -1,7 +1,7 @@
 #include "c_api.h"
 #include "nlp.hpp"
 
-#include <coin/IpIpoptApplication.hpp>
+#include <IpIpoptApplication.hpp>
 #include <memory>
 #include <vector>
 #include <iterator>

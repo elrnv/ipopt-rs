@@ -6,6 +6,7 @@ license = "MIT OR Apache-2.0"
 description = "Rust language bindings for the Ipopt non-linear constrained optimization library."
 readme = "README.md"
 edition = "2018"
+rust-version = "1.88"
 
 homepage = "https://github.com/elrnv/ipopt-rs"
 repository = "https://github.com/elrnv/ipopt-rs"

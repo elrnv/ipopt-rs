@@ -2,13 +2,38 @@ cmake_minimum_required( VERSION 3.6 )
 
 project( IpoptCNLP )
 
-set(CMAKE_CXX_FLAGS_DEBUG "-g -Wall")
-set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # The following three lines constitute the Ipopt find script
 set( Ipopt_INCLUDE_DIRS "NOTFOUND" CACHE STRING "Ipopt include paths")
-find_path( Ipopt_INCLUDE_DIR coin/IpIpoptApplication.hpp PATHS ${Ipopt_INCLUDE_DIRS} DOC "Ipopt include directory")
+# Prefer the explicitly supplied include tree. CMake caches find_path results,
+# and a previous build with a different IPOPT_DIR must not select stale headers.
+unset(Ipopt_INCLUDE_DIR CACHE)
+set(_ipopt_include_candidates
+    "${Ipopt_INCLUDE_DIRS}"
+    "${Ipopt_INCLUDE_DIRS}/coin"
+    "${Ipopt_INCLUDE_DIRS}/coin-or"
+)
+foreach(_candidate IN LISTS _ipopt_include_candidates)
+    if(EXISTS "${_candidate}/IpIpoptApplication.hpp")
+        set(Ipopt_INCLUDE_DIR "${_candidate}")
+        break()
+    endif()
+endforeach()
+
+if(NOT Ipopt_INCLUDE_DIR)
+    find_path( Ipopt_INCLUDE_DIR
+        NAMES IpIpoptApplication.hpp
+        PATHS ${Ipopt_INCLUDE_DIRS}
+        PATH_SUFFIXES coin coin-or
+        DOC "Ipopt include directory"
+    )
+endif()
+
+if(NOT Ipopt_INCLUDE_DIR)
+    message(FATAL_ERROR "Could not find IpIpoptApplication.hpp in the supplied Ipopt include paths")
+endif()
 
 set( library_name ipopt_cnlp )
 
@@ -25,6 +50,12 @@ add_library( ${library_name} STATIC
 add_definitions(-DHAVE_CSTDDEF)
 
 target_include_directories( ${library_name} PRIVATE ${Ipopt_INCLUDE_DIR} )
+
+if(MSVC)
+    target_compile_definitions(${library_name} PRIVATE _CRT_SECURE_NO_WARNINGS)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(${library_name} PRIVATE -Wall)
+endif()
 
 install( TARGETS ${library_name} DESTINATION lib )
 install( FILES ${CAPI_HEADERS} DESTINATION include )
